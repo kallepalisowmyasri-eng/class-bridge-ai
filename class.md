@@ -1,14 +1,15 @@
 # AI Class Recovery System
 
-**Tagline:**\
-\> Missed the class? Catch up smarter, not longer.
+**Tagline:**
 
-**Project Type:** AI-powered full-stack web application\
-**Primary Backend:** Java + Spring Boot\
-**Frontend:** HTML, CSS, JavaScript\
-**Database:** PostgreSQL\
-**AI:** Gemini API\
-**Speech-to-Text:** Whisper / faster-whisper\
+> Missed the class? Catch up smarter, not longer.
+
+**Project Type:** AI-powered full-stack web application
+**Primary Backend:** Java + Spring Boot
+**Frontend:** HTML, CSS, JavaScript
+**Database:** PostgreSQL
+**AI:** Gemini API
+**Speech-to-Text:** Whisper / faster-whisper
 **Media Processing:** FFmpeg
 
 ------------------------------------------------------------------------
@@ -182,6 +183,22 @@ The system should:
 -   Show processing status
 -   Handle invalid files
 -   Allow recording deletion
+
+------------------------------------------------------------------------
+
+## 5.2 Student Notes
+
+Students can write their own notes for a class.
+
+Notes are:
+
+-   Personal to the student (not visible to other students)
+-   Attached to a specific class or topic
+-   Free-form text (plain or markdown)
+-   Editable and deletable by the student
+
+Notes are stored separately from AI-generated material so the student's
+own annotations are never confused with verified class content.
 
 ------------------------------------------------------------------------
 
@@ -859,6 +876,8 @@ Students can mark concepts:
 -   Spring Data JPA
 -   Hibernate
 -   Spring Security
+-   PostgreSQL JDBC driver
+-   Spring WebClient (HTTP calls to Whisper and Gemini)
 -   Maven
 
 ## Frontend
@@ -883,7 +902,9 @@ Optional future upgrade:
 
 ## Speech-to-Text
 
--   Whisper / faster-whisper
+-   Whisper / faster-whisper (Python)
+-   Python 3.11+
+-   pip / virtual environment for the transcription service
 
 ## Media
 
@@ -914,7 +935,7 @@ Future:
 # 23. Java Backend Folder Structure
 
 ``` text
-ai-class-recovery/
+classbridge-ai/
 │
 ├── backend/
 │   ├── pom.xml
@@ -945,12 +966,18 @@ ai-class-recovery/
 │   ├── dashboard.html
 │   ├── class.html
 │   ├── css/
+│   │   └── style.css
 │   └── js/
+│       ├── app.js
+│       └── dashboard.js
 │
 ├── transcription-service/
-│   └── whisper_service.py
+│   ├── whisper_service.py
+│   └── requirements.txt
 │
 ├── uploads/
+│   ├── recordings/
+│   └── audio/
 │
 ├── docs/
 │   ├── requirements.md
@@ -958,6 +985,7 @@ ai-class-recovery/
 │   ├── database-schema.md
 │   └── api-specification.md
 │
+├── docker-compose.yml
 ├── .env.example
 ├── .gitignore
 └── README.md
@@ -986,6 +1014,7 @@ quiz_questions
 recovery_progress
 learning_gaps
 catchup_paths
+notes
 ```
 
 Important relationships:
@@ -994,6 +1023,8 @@ Important relationships:
 User
   |
   +-- Recovery Progress
+  +-- Catch-up Paths
+  +-- Notes
   |
   +-- Classes
 
@@ -1004,6 +1035,7 @@ Subject
 Class
   |
   +-- Transcript
+  |     +-- Transcript Segments
   +-- Topics
   +-- Assignments
   +-- Announcements
@@ -1011,8 +1043,11 @@ Class
   +-- Questions
   +-- Visual Content
   +-- Quiz
+  |     +-- Quiz Questions
   +-- Recovery Progress
   +-- Learning Gaps
+  +-- Catch-up Paths
+  +-- Notes
 ```
 
 ------------------------------------------------------------------------
@@ -1353,6 +1388,9 @@ The first MVP should include only:
 ✓ What You Missed
 ✓ Must Learn
 ✓ Catch-up Path
+✓ Prerequisites
+✓ Quick Explanation
+✓ What to Watch
 ✓ Important timestamps
 ✓ Quick Revision
 ✓ Quiz
@@ -1370,6 +1408,12 @@ Do NOT initially implement:
 ✗ Advanced visual AI
 ✗ Full personalization
 ✗ Production-scale infrastructure
+✗ Previous Classes / Cross-class knowledge base (Phase 9)
+✗ Chat With Class / RAG (Phase 10)
+✗ Learning Gap Engine (Phase 11)
+✗ Personalized Catch-up Path (Phase 12)
+✗ Visual Understanding / Frame extraction (Phase 13)
+✗ Live integration (Phase 14)
 ```
 
 ------------------------------------------------------------------------
@@ -1493,7 +1537,7 @@ Therefore:
 Do not start implementing every feature.
 
 The next task is to create the **technical architecture document**
-containing:
+(under `docs/`) containing:
 
 1.  Spring Boot architecture
 2.  Module structure
@@ -1508,5 +1552,10 @@ containing:
 11. Security design
 12. Error-handling design
 13. MVP implementation order
+
+The `docs/` folder (see section 23) does not exist yet. The architecture
+document should be created as `docs/architecture.md`, with supporting
+documents as `docs/database-schema.md`, `docs/api-specification.md`, and
+`docs/requirements.md`.
 
 After that, begin **Phase 1: Spring Boot + PostgreSQL project setup**.

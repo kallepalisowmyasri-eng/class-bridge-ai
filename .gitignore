@@ -38,3 +38,31 @@ bin/
 target/
 build/
 out/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded media (recordings, extracted audio)
+uploads/
+
+# Python / transcription-service
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Node / frontend dependencies
+node_modules/
+dist/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Maven wrapper
+.mvn/wrapper/maven-wrapper.jar
