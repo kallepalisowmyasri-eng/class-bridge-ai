@@ -43,6 +43,7 @@ out/
 .env
 .env.*
 !.env.example
+application-dev.properties
 
 # Uploaded media (recordings, extracted audio)
 uploads/
