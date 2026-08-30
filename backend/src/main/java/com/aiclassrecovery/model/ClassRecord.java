@@ -28,12 +28,19 @@ public class ClassRecord {
     @Id
     private String id;
 
+    /** Reference to Subject document */
+    @Indexed
+    private String subjectId;
+
     /** e.g. "AI & ML", "Data Structures" */
     @Indexed
     private String subject;
 
     /** e.g. "Class 08" */
     private String className;
+
+    /** Optional description */
+    private String description;
 
     /** User who uploaded the recording */
     @Indexed
@@ -42,8 +49,17 @@ public class ClassRecord {
     /** Original file path of the uploaded recording */
     private String recordingPath;
 
+    /** Original filename as uploaded by the user */
+    private String originalFilename;
+
+    /** Path to extracted WAV audio file */
+    private String audioPath;
+
     /** Duration in seconds */
     private int durationSeconds;
+
+    /** Reference to Transcript document */
+    private String transcriptId;
 
     /** AI-generated: what was covered in this class */
     private String whatYouMissed;
@@ -78,6 +94,7 @@ public class ClassRecord {
     // ── Nested types ────────────────────────────────────────────────────────
 
     @Data
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class MustLearnItem {
@@ -87,6 +104,7 @@ public class ClassRecord {
     }
 
     @Data
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TimestampedItem {
@@ -98,6 +116,7 @@ public class ClassRecord {
     }
 
     @Data
+    @Builder
     @NoArgsConstructor
     @AllArgsConstructor
     public static class QuizQuestion {

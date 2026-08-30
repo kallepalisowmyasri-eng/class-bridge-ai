@@ -15,4 +15,15 @@ public interface ClassRecordRepository extends MongoRepository<ClassRecord, Stri
     
     /** Find all records for a specific subject */
     List<ClassRecord> findBySubject(String subject);
+
+    /** Find all records for a specific subject by subject ID */
+    List<ClassRecord> findBySubjectId(String subjectId);
+
+    /** Find all records for a specific user and subject */
+    List<ClassRecord> findByUserIdAndSubjectId(String userId, String subjectId);
+
+    /** Search classes by name or subject for a user */
+    List<ClassRecord> findByUserIdAndClassNameContainingIgnoreCase(String userId, String className);
+
+    List<ClassRecord> findByUserIdAndSubjectContainingIgnoreCase(String userId, String subject);
 }

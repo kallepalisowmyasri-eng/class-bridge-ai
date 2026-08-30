@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — ClassBridge AI</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="app-header">
+    <a href="dashboard.html" class="logo">Class<span>Bridge</span> AI</a>
+    <div class="header-actions">
+      <div class="user-pill">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <span id="user-name">User</span>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="logout-btn">Log out</button>
+    </div>
+  </header>
+
+  <div class="app-container">
+    <div class="dash-hero">
+      <h1>Welcome back 👋</h1>
+      <p>Recover missed classes in minutes, not hours.</p>
+      <div class="dash-actions">
+        <button class="btn btn-primary btn-lg" id="btn-upload-quick">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Upload Recording
+        </button>
+        <button class="btn btn-secondary btn-lg" id="btn-create-subject">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          New Subject
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-subjects">0</div>
+        <div class="stat-label">Subjects</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-classes">0</div>
+        <div class="stat-label">Classes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-analyzed">0</div>
+        <div class="stat-label">Analyzed</div>
+      </div>
+    </div>
+
+    <div class="section-header">
+      <h2 class="section-title">Subjects</h2>
+    </div>
+    <div class="subject-grid" id="subject-grid"></div>
+
+    <div class="section-header">
+      <h2 class="section-title" id="classes-section-title">All Classes</h2>
+      <div class="toolbar" id="classes-toolbar">
+        <div class="search-box">
+          <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input class="search-input" id="class-search" type="text" placeholder="Search classes...">
+        </div>
+        <div class="filter-chips" id="filter-chips">
+          <button class="filter-chip active" data-filter="all">All</button>
+          <button class="filter-chip" data-filter="ANALYZED">Analyzed</button>
+          <button class="filter-chip" data-filter="PENDING">Pending</button>
+          <button class="filter-chip" data-filter="PROCESSING">Processing</button>
+          <button class="filter-chip" data-filter="FAILED">Failed</button>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btn-clear-filter" style="display:none">
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        Clear Filter
+      </button>
+    </div>
+    <div class="class-list" id="class-list"></div>
+  </div>
+
+  <!-- Create Subject Modal -->
+  <div class="modal-backdrop" id="subject-modal">
+    <div class="modal">
+      <h2>New Subject</h2>
+      <form id="create-subject-form">
+        <div class="form-group">
+          <label class="form-label">Subject Name</label>
+          <input class="form-input" id="subject-name" placeholder="e.g. Data Structures" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" id="subject-desc" placeholder="e.g. CS201 — Fall 2026">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-subject">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Subject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Upload Modal -->
+  <div class="modal-backdrop" id="upload-modal">
+    <div class="modal">
+      <h2>Upload Class Recording</h2>
+      <form id="upload-form">
+        <div class="form-group">
+          <label class="form-label">Subject</label>
+          <select class="form-input" id="upload-subject" required>
+            <option value="">Select a subject...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class Name</label>
+          <input class="form-input" id="upload-class-name" placeholder="e.g. Lecture 08 — Binary Search" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" id="upload-desc" placeholder="What was covered in this class">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Recording File</label>
+          <input class="form-input" type="file" id="upload-file" accept=".mp4,.mp3,.wav,.m4a" required>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Supports MP4, MP3, WAV, M4A — up to 2GB</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancel-upload">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-do-upload">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload & Process
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="js/app.js"></script>
+  <script>
+    initDashboard();
+    document.getElementById('btn-upload-quick').addEventListener('click', showUploadModal);
+    document.getElementById('btn-create-subject').addEventListener('click', showCreateSubject);
+    document.getElementById('btn-cancel-subject').addEventListener('click', () => closeModal('subject-modal'));
+    document.getElementById('btn-cancel-upload').addEventListener('click', () => closeModal('upload-modal'));
+    document.getElementById('create-subject-form').addEventListener('submit', createSubject);
+    document.getElementById('upload-form').addEventListener('submit', handleUpload);
+  </script>
+</body>
+</html>

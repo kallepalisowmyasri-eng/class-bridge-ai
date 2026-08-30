@@ -326,23 +326,40 @@ frontend/
 
 ---
 
-## Phase 9 — Previous Classes (after MVP)
+## Phase 9 — Previous Classes (after MVP) ✅
 
 - Class history, subject organization, search
 - `GET /api/subjects/{id}/classes` ordered by date
+- `GET /api/classes/search?q=...` — full-text search by class name and subject
+- Status filter chips (All / Analyzed / Pending / Processing / Failed)
+- Subject-specific server-side filtering
+- Clear filter button to reset all filters
 
-## Phase 10 — Chat With Class (RAG)
+## Phase 10 — Chat With Class (RAG) ✅
 
-- Chunk transcripts → embeddings → vector storage (pgvector) → similarity search → Gemini answers with timestamps
+- Lightweight RAG: transcript segments + keyword relevance ranking → Gemini answers
+- `POST /api/classes/{id}/chat` — accepts `{ message: "..." }`, returns `{ answer, sourceTimestamps, className }`
+- Keyword extraction + stopword filtering for segment ranking
+- Transcript chunking for long classes (25K char budget)
+- Chat UI: message bubbles, typing indicator, timestamp badges
+- Source timestamps parsed from Gemini responses
 
-## Phase 11 — Learning Gap Engine
+## Phase 11 — Learning Gap Engine ✅
 
 - Compare current vs previous class topics → identify prerequisites to review
+- `GET /api/classes/{id}/learning-gaps` — gap analysis with AI recommendations
+- Returns: missing topics, prerequisite topics, priority-ranked recommendations, overall assessment
+- Uses Gemini for intelligent gap analysis with fallback to basic comparison
+- Frontend: Learning Gaps tab with stats, missing topics, prerequisites, recommendations
 
-## Phase 12 — Personalized Catch-up
+## Phase 12 — Personalized Catch-up ✅
 
 - Student learning state: mark understood / needs review / completed
 - Recovery progress %, practice, quiz results
+- `GET /api/classes/{id}/progress` — get progress data
+- `POST /api/classes/{id}/progress/concept` — mark concept status
+- `POST /api/classes/{id}/progress/quiz` — submit quiz results
+- Frontend: progress ring on overview, concept status buttons on Must Learn, auto-submit quiz results
 
 ## Phase 13 — Visual Understanding
 
