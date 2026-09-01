@@ -8,6 +8,7 @@ import com.aiclassrecovery.dto.SubjectRequest;
 import com.aiclassrecovery.dto.SubjectResponse;
 import com.aiclassrecovery.model.Subject;
 import com.aiclassrecovery.repository.ClassRecordRepository;
+import com.aiclassrecovery.repository.StudentProgressRepository;
 import com.aiclassrecovery.repository.SubjectRepository;
 
 @Service
@@ -15,15 +16,21 @@ public class SubjectService {
 
     private final SubjectRepository subjectRepository;
     private final ClassRecordRepository classRecordRepository;
+    private final StudentProgressRepository studentProgressRepository;
+    private final TranscriptionService transcriptionService;
     private final FileService fileService;
     private final MediaProcessingService mediaProcessingService;
 
     public SubjectService(SubjectRepository subjectRepository,
                           ClassRecordRepository classRecordRepository,
+                          StudentProgressRepository studentProgressRepository,
+                          TranscriptionService transcriptionService,
                           FileService fileService,
                           MediaProcessingService mediaProcessingService) {
         this.subjectRepository = subjectRepository;
         this.classRecordRepository = classRecordRepository;
+        this.studentProgressRepository = studentProgressRepository;
+        this.transcriptionService = transcriptionService;
         this.fileService = fileService;
         this.mediaProcessingService = mediaProcessingService;
     }
@@ -69,6 +76,8 @@ public class SubjectService {
             if (userId.equals(cls.getUserId())) {
                 fileService.deleteFile(cls.getRecordingPath());
                 mediaProcessingService.deleteAudio(cls.getAudioPath());
+                transcriptionService.deleteByClassId(cls.getId());
+                studentProgressRepository.deleteByClassId(cls.getId());
                 classRecordRepository.delete(cls);
             }
         }

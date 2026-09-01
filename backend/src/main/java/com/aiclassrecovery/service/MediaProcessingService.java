@@ -19,11 +19,15 @@ public class MediaProcessingService {
     private static final Logger log = LoggerFactory.getLogger(MediaProcessingService.class);
 
     private final Path audioDir;
+    private final Path uploadDir;
 
-    public MediaProcessingService(@Value("${file.audio-dir}") String audioDir) {
-        this.audioDir = Paths.get(audioDir);
+    public MediaProcessingService(@Value("${file.audio-dir}") String audioDir,
+                                  @Value("${file.upload-dir}") String uploadDir) {
+        this.audioDir = Paths.get(audioDir).toAbsolutePath().normalize();
+        this.uploadDir = Paths.get(uploadDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.audioDir);
+            Files.createDirectories(this.uploadDir);
         } catch (IOException e) {
             throw new RuntimeException("Could not create audio directory", e);
         }
@@ -34,12 +38,13 @@ public class MediaProcessingService {
      * Returns the path to the extracted WAV file.
      */
     public String extractAudio(String inputFilePath, String classId) {
-        Path input = Paths.get(inputFilePath).normalize();
+        Path input = Paths.get(inputFilePath).toAbsolutePath().normalize();
         if (!Files.exists(input)) {
             throw new RuntimeException("Input file not found: " + inputFilePath);
         }
-        if (!input.toAbsolutePath().startsWith(audioDir.toAbsolutePath().normalize()) &&
-            !input.toAbsolutePath().startsWith(Paths.get(System.getProperty("user.home")).resolve("classbridge").toAbsolutePath())) {
+        if (!input.startsWith(audioDir) &&
+            !input.startsWith(uploadDir) &&
+            !input.startsWith(Paths.get(System.getProperty("user.home")).resolve("classbridge").toAbsolutePath().normalize())) {
             throw new RuntimeException("Input file not in allowed directory");
         }
 

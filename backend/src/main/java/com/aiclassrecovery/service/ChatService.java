@@ -216,7 +216,7 @@ public class ChatService {
 
     private List<String> extractTimestamps(String text) {
         List<String> timestamps = new ArrayList<>();
-        Pattern p = Pattern.compile("\\[(\\d{1,2}:\\d{2}(?::\\d{2})?)\\]");
+        Pattern p = Pattern.compile("[\\[\\(]?(\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b)[\\]\\)]?");
         Matcher m = p.matcher(text);
         while (m.find()) {
             timestamps.add(m.group(1));

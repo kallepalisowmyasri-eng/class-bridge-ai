@@ -96,6 +96,23 @@ public class ClassController {
                 .body(resource);
     }
 
+    @GetMapping("/{id}/audio")
+    public ResponseEntity<Resource> streamAudio(Authentication auth,
+                                                @PathVariable String id) {
+        String userId = auth.getName();
+        ClassResponse cls = classService.getById(userId, id);
+
+        if (cls.getAudioPath() == null && cls.getRecordingPath() == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        Resource resource = classService.loadAudio(userId, id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("audio/wav"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + id + "_audio.wav\"")
+                .body(resource);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(Authentication auth,
                                         @PathVariable String id) {

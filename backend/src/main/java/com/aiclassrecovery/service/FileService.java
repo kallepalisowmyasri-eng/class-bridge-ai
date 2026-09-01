@@ -25,8 +25,8 @@ public class FileService {
 
     public FileService(@Value("${file.upload-dir}") String uploadDir,
                        @Value("${file.audio-dir}") String audioDir) {
-        this.uploadDir = Paths.get(uploadDir);
-        this.audioDir = Paths.get(audioDir);
+        this.uploadDir = Paths.get(uploadDir).toAbsolutePath().normalize();
+        this.audioDir = Paths.get(audioDir).toAbsolutePath().normalize();
         try {
             Files.createDirectories(this.uploadDir);
             Files.createDirectories(this.audioDir);
@@ -52,7 +52,7 @@ public class FileService {
     }
 
     public Resource loadRecording(String filePath) {
-        Path path = Paths.get(filePath).normalize();
+        Path path = Paths.get(filePath).toAbsolutePath().normalize();
         if (!path.startsWith(uploadDir) && !path.startsWith(audioDir)) {
             throw new RuntimeException("Access denied");
         }

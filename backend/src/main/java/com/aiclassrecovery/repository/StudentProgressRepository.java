@@ -13,4 +13,6 @@ public interface StudentProgressRepository extends MongoRepository<StudentProgre
     Optional<StudentProgress> findByUserIdAndClassId(String userId, String classId);
 
     boolean existsByUserIdAndClassId(String userId, String classId);
+
+    void deleteByClassId(String classId);
 }

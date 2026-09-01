@@ -61,7 +61,7 @@ public class TranscriptionService {
 
         Transcript transcript = Transcript.builder()
                 .classId(classId)
-                .fullText(response.getFull_text())
+                .fullText(response.getFullText())
                 .segments(segments)
                 .duration(segments.isEmpty() ? 0 :
                         segments.get(segments.size() - 1).getEnd())

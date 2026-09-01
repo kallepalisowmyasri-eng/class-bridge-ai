@@ -200,10 +200,15 @@ public class GeminiService {
             if (cleaned.startsWith("```")) {
                 cleaned = cleaned.replaceAll("^```(?:json)?\\s*", "").replaceAll("```\\s*$", "");
             }
+            int firstBrace = cleaned.indexOf('{');
+            int lastBrace = cleaned.lastIndexOf('}');
+            if (firstBrace != -1 && lastBrace != -1 && lastBrace > firstBrace) {
+                cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+            }
             return objectMapper.readValue(cleaned, GeminiAnalysisResult.class);
         } catch (Exception e) {
             log.error("Failed to parse analysis JSON: {}", json, e);
-            throw new RuntimeException("Failed to parse AI analysis result");
+            throw new RuntimeException("Failed to parse AI analysis result: " + e.getMessage());
         }
     }
 

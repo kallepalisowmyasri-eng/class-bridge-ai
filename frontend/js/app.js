@@ -368,6 +368,9 @@ async function initClassDetail() {
 
   try {
     const cls = await apiFetch(`/classes/${classId}`);
+    window._classData = cls;
+    window._classId = classId;
+
     document.getElementById('class-title').textContent = cls.className;
     document.getElementById('class-subject').textContent = cls.subject || '';
     document.getElementById('class-description').textContent = cls.description || '';
@@ -386,13 +389,154 @@ async function initClassDetail() {
     document.getElementById('progress-fill').style.width = progress + '%';
     document.getElementById('progress-text').textContent = progress + '%';
 
+    setupAudioPlayer(cls);
     renderOverview(cls);
     initTabs();
 
-    window._classData = cls;
-    window._classId = classId;
+    if (cls.status === 'PENDING' || cls.status === 'UPLOADED' || cls.status === 'PROCESSING' || cls.status === 'AUDIO_READY' || cls.status === 'TRANSCRIBED') {
+      startStatusPolling(classId);
+    }
   } catch (err) {
     document.getElementById('tab-area').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Failed to load class</h3><p>${esc(err.message)}</p><a href="dashboard.html" class="btn btn-primary">Back to Dashboard</a></div>`;
+  }
+}
+
+let pollInterval = null;
+function startStatusPolling(classId) {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    try {
+      const cls = await apiFetch(`/classes/${classId}`);
+      window._classData = cls;
+      const statusEl = document.getElementById('class-status');
+      if (statusEl) {
+        statusEl.textContent = formatStatus(cls.status);
+        statusEl.className = 'status-badge status-' + cls.status;
+      }
+      const progress = getProgressPercent(cls.status);
+      const fill = document.getElementById('progress-fill');
+      const text = document.getElementById('progress-text');
+      if (fill) fill.style.width = progress + '%';
+      if (text) text.textContent = progress + '%';
+
+      const labelEl = document.getElementById('progress-status-label');
+      if (labelEl) {
+        const labels = {
+          PENDING: 'Waiting in queue...',
+          UPLOADED: 'Recording uploaded, extracting audio...',
+          PROCESSING: 'Extracting audio with FFmpeg...',
+          AUDIO_READY: 'Transcribing with Whisper...',
+          TRANSCRIBED: 'Analyzing class with Gemini AI...',
+          ANALYZED: 'Processing Complete! Ready for recovery.',
+          DONE: 'Processing Complete!',
+          FAILED: 'Processing failed.'
+        };
+        labelEl.textContent = labels[cls.status] || 'Processing Progress';
+      }
+
+      if (cls.status === 'ANALYZED' || cls.status === 'DONE' || cls.status === 'FAILED') {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        setupAudioPlayer(cls);
+        renderOverview(cls);
+        if (cls.status === 'ANALYZED' || cls.status === 'DONE') {
+          toast('AI Analysis complete! Recovery materials ready.', 'success');
+          document.querySelectorAll('.tab-panel').forEach(p => { if (p.id !== 'tab-overview') delete p.dataset.loaded; });
+        } else {
+          toast('Processing encountered an error.', 'error');
+        }
+      }
+    } catch (_) {}
+  }, 3000);
+}
+
+function parseTimestampToSeconds(ts) {
+  if (!ts) return 0;
+  const clean = ts.toString().trim().replace(/[\[\]\(\)]/g, '');
+  const parts = clean.split(':').map(Number);
+  if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+  if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+  if (parts.length === 1 && !isNaN(parts[0])) return parts[0];
+  return 0;
+}
+
+function seekAudio(sec) {
+  const audio = document.getElementById('class-audio-player');
+  if (!audio) return;
+  audio.currentTime = sec;
+  audio.play().then(() => {
+    const playBtn = document.getElementById('audio-play-btn');
+    if (playBtn) {
+      playBtn.querySelector('.icon-play').style.display = 'none';
+      playBtn.querySelector('.icon-pause').style.display = 'block';
+    }
+  }).catch(() => {});
+  toast(`Seeking to ${formatDuration(sec)}`, 'info');
+}
+
+function setupAudioPlayer(cls) {
+  const card = document.getElementById('audio-player-card');
+  const audio = document.getElementById('class-audio-player');
+  if (!card || !audio) return;
+
+  if (cls.status === 'PENDING' || cls.status === 'PROCESSING') {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  const audioUrl = `${API}/classes/${cls.id}/audio?token=${encodeURIComponent(token)}`;
+  if (audio.getAttribute('src') !== audioUrl) {
+    audio.src = audioUrl;
+  }
+
+  const playBtn = document.getElementById('audio-play-btn');
+  const iconPlay = playBtn.querySelector('.icon-play');
+  const iconPause = playBtn.querySelector('.icon-pause');
+  const currTimeEl = document.getElementById('audio-curr-time');
+  const totalTimeEl = document.getElementById('audio-total-time');
+  const seekSlider = document.getElementById('audio-seek');
+  const speedSelect = document.getElementById('audio-speed');
+  const dlBtn = document.getElementById('btn-download-recording');
+
+  playBtn.onclick = () => {
+    if (audio.paused) {
+      audio.play().then(() => {
+        iconPlay.style.display = 'none';
+        iconPause.style.display = 'block';
+      }).catch(err => toast('Audio playback error: ' + err.message, 'error'));
+    } else {
+      audio.pause();
+      iconPlay.style.display = 'block';
+      iconPause.style.display = 'none';
+    }
+  };
+
+  audio.ontimeupdate = () => {
+    currTimeEl.textContent = formatDuration(Math.floor(audio.currentTime));
+    if (audio.duration && !isNaN(audio.duration)) {
+      seekSlider.value = (audio.currentTime / audio.duration) * 100;
+    }
+  };
+
+  audio.onloadedmetadata = () => {
+    totalTimeEl.textContent = formatDuration(Math.floor(audio.duration || cls.durationSeconds || 0));
+  };
+
+  seekSlider.oninput = () => {
+    if (audio.duration && !isNaN(audio.duration)) {
+      audio.currentTime = (seekSlider.value / 100) * audio.duration;
+    }
+  };
+
+  speedSelect.onchange = () => {
+    audio.playbackRate = parseFloat(speedSelect.value);
+  };
+
+  if (dlBtn) {
+    dlBtn.onclick = () => {
+      window.open(`${API}/classes/${cls.id}/recording?token=${encodeURIComponent(token)}`, '_blank');
+    };
   }
 }
 
@@ -522,18 +666,127 @@ async function loadCatchUp(classId) {
   } catch (err) { el.innerHTML = errorState(err.message); }
 }
 
+async function loadExplanations(classId) {
+  const el = document.getElementById('tab-explanations');
+  try {
+    const data = await apiFetch(`/classes/${classId}/explanations`);
+    const revisions = data.revisionPoints || [];
+    const mustLearn = data.mustLearn || [];
+    const topics = data.topics || [];
+
+    if (!revisions.length && !mustLearn.length && !topics.length) {
+      el.innerHTML = emptyState('Not yet analyzed', 'Deep concept explanations will appear after AI analysis.');
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-title">💡 Core Concepts & Focus Areas</div>
+        ${mustLearn.map(m => `
+          <div class="explanation-card">
+            <div class="item-header">
+              <span class="item-title">${esc(m.concept)}</span>
+              <span class="priority-tag ${esc(m.priority)}">${esc(m.priority)}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      ${revisions.length ? `
+      <div class="panel">
+        <div class="panel-title">📖 Key Takeaways & Explanations</div>
+        <ul class="panel-list">
+          ${revisions.map(r => `<li>${esc(r)}</li>`).join('')}
+        </ul>
+      </div>
+      ` : ''}
+    `;
+  } catch (err) { el.innerHTML = errorState(err.message); }
+}
+
 async function loadTimestamps(classId) {
   const el = document.getElementById('tab-timestamps');
   try {
     const items = await apiFetch(`/classes/${classId}/timestamps`);
     if (!items.length) { el.innerHTML = emptyState('No timestamps yet', 'Important timestamps will be extracted during analysis.'); return; }
-    el.innerHTML = `<div class="panel"><div class="panel-title">⏱️ Important Timestamps</div><div class="ts-stack">${items.map(i => `
+    el.innerHTML = `<div class="panel"><div class="panel-title">⏱️ Important Timestamps (Click to listen)</div><div class="ts-stack">${items.map(i => `
       <div class="ts-row">
-        <span class="ts-time">${esc(i.timestamp)}</span>
+        <span class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(i.timestamp)})">▶ ${esc(i.timestamp)}</span>
         <span class="ts-type ts-type-${esc(i.type)}">${esc(i.type)}</span>
         <span style="font-size:14px;color:var(--text-secondary)">${esc(i.description)}</span>
       </div>
     `).join('')}</div></div>`;
+  } catch (err) { el.innerHTML = errorState(err.message); }
+}
+
+async function loadAssignments(classId) {
+  const el = document.getElementById('tab-assignments');
+  try {
+    const items = await apiFetch(`/classes/${classId}/assignments`);
+    if (!items.length) {
+      el.innerHTML = emptyState('No assignments detected', 'Assignments, homework, and submission deadlines mentioned in lecture will appear here.');
+      return;
+    }
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-title">📋 Class Assignments & Tasks</div>
+        ${items.map(a => `
+          <div class="assignment-card">
+            <div class="item-header">
+              <span class="item-title">Assignment Mention</span>
+              <span class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(a.timestamp)})">▶ ${esc(a.timestamp)}</span>
+            </div>
+            <p class="item-desc">${esc(a.description)}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (err) { el.innerHTML = errorState(err.message); }
+}
+
+async function loadAnnouncements(classId) {
+  const el = document.getElementById('tab-announcements');
+  try {
+    const items = await apiFetch(`/classes/${classId}/announcements`);
+    if (!items.length) {
+      el.innerHTML = emptyState('No announcements found', 'Exam dates, syllabus changes, and teacher announcements from lecture will appear here.');
+      return;
+    }
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-title">📢 Class Announcements</div>
+        ${items.map(a => `
+          <div class="announcement-card">
+            <div class="item-header">
+              <span class="item-title">Announcement</span>
+              <span class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(a.timestamp)})">▶ ${esc(a.timestamp)}</span>
+            </div>
+            <p class="item-desc">${esc(a.description)}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (err) { el.innerHTML = errorState(err.message); }
+}
+
+async function loadResources(classId) {
+  const el = document.getElementById('tab-resources');
+  try {
+    const resources = await apiFetch(`/classes/${classId}/resources`);
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-title">📚 Course Materials & Downloads</div>
+        <div class="resource-card">
+          <div class="item-header">
+            <span class="item-title">🎵 Class Audio Stream</span>
+          </div>
+          <p class="item-desc">High quality 16kHz speech-to-text audio recording for this lecture.</p>
+          <div style="margin-top:10px;display:flex;gap:8px">
+            <button class="btn btn-primary btn-sm" onclick="seekAudio(0)">▶ Play from Start</button>
+            <a class="btn btn-ghost btn-sm" href="${API}/classes/${classId}/recording?token=${encodeURIComponent(token)}" target="_blank">Download Recording</a>
+          </div>
+        </div>
+      </div>
+    `;
   } catch (err) { el.innerHTML = errorState(err.message); }
 }
 
@@ -562,7 +815,7 @@ async function loadQuiz(classId) {
             </div>
           `).join('')}
         </div>
-        ${q.sourceTimestamp ? `<div class="quiz-source">📌 Source: ${esc(q.sourceTimestamp)}</div>` : ''}
+        ${q.sourceTimestamp ? `<div class="quiz-source" style="margin-top:12px"><span class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(q.sourceTimestamp)})">📌 Source: ${esc(q.sourceTimestamp)}</span></div>` : ''}
       </div>
     `).join('');
 
@@ -581,6 +834,7 @@ async function loadWatch(classId) {
     const mustWatch = data?.mustWatch || [];
     const recommended = data?.recommended || [];
     const optional = data?.optional || [];
+    const explanationTimestamps = data?.explanationTimestamps || [];
 
     if (!mustWatch.length && !recommended.length && !optional.length) {
       el.innerHTML = emptyState('Not yet analyzed', 'Watch recommendations will be generated after analysis.');
@@ -592,17 +846,30 @@ async function loadWatch(classId) {
       { title: '🟡 Recommended', items: recommended, empty: 'No recommended items.' },
       { title: '🟢 Optional', items: optional, empty: 'No optional items.' }
     ];
-    el.innerHTML = sections.map(s => `
-      <div class="watch-section">
-        <h4>${s.title}</h4>
-        ${s.items.length ? s.items.map(i => `
-          <div class="watch-item">
-            <strong>${esc(i.concept)}</strong>
-            <div class="reason">${esc(i.reason)}</div>
+    el.innerHTML = `
+      ${explanationTimestamps.length ? `
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-title">⏱️ Key Explanation Moments</div>
+        <div class="ts-stack">${explanationTimestamps.map(t => `
+          <div class="ts-row">
+            <span class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(t.timestamp)})">▶ ${esc(t.timestamp)}</span>
+            <span style="font-size:14px;color:var(--text-secondary)">${esc(t.description)}</span>
           </div>
-        `).join('') : `<p style="font-size:13px;color:var(--text-muted);padding:8px 0">${s.empty}</p>`}
+        `).join('')}</div>
       </div>
-    `).join('');
+      ` : ''}
+      ${sections.map(s => `
+        <div class="watch-section">
+          <h4>${s.title}</h4>
+          ${s.items.length ? s.items.map(i => `
+            <div class="watch-item">
+              <strong>${esc(i.concept)}</strong>
+              <div class="reason">${esc(i.reason)}</div>
+            </div>
+          `).join('') : `<p style="font-size:13px;color:var(--text-muted);padding:8px 0">${s.empty}</p>`}
+        </div>
+      `).join('')}
+    `;
   } catch (err) { el.innerHTML = errorState(err.message); }
 }
 
@@ -787,7 +1054,7 @@ async function sendChatMessage(classId) {
 
     // Add bot response
     const timestampsHtml = data.sourceTimestamps?.length
-      ? `<div class="chat-timestamps">${data.sourceTimestamps.map(t => `<span class="chat-ts-badge">📌 ${esc(t)}</span>`).join('')}</div>`
+      ? `<div class="chat-timestamps">${data.sourceTimestamps.map(t => `<span class="chat-ts-badge clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(t)})">📌 ${esc(t)}</span>`).join('')}</div>`
       : '';
 
     messagesEl.innerHTML += `
@@ -836,17 +1103,25 @@ function initTabs() {
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       const panel = document.getElementById('tab-' + btn.dataset.tab);
-      panel.classList.add('active');
+      if (panel) panel.classList.add('active');
 
       const classId = window._classId;
       const tab = btn.dataset.tab;
       const loaders = {
-        'must-learn': loadMustLearn, 'catchup': loadCatchUp,
-        'gaps': loadLearningGaps, 'timestamps': loadTimestamps,
-        'revision': loadRevision, 'quiz': loadQuiz,
-        'watch': loadWatch, 'chat': loadChat
+        'must-learn': loadMustLearn,
+        'catchup': loadCatchUp,
+        'explanations': loadExplanations,
+        'gaps': loadLearningGaps,
+        'timestamps': loadTimestamps,
+        'assignments': loadAssignments,
+        'announcements': loadAnnouncements,
+        'resources': loadResources,
+        'revision': loadRevision,
+        'quiz': loadQuiz,
+        'watch': loadWatch,
+        'chat': loadChat
       };
-      if (loaders[tab] && !panel.dataset.loaded) {
+      if (loaders[tab] && panel && !panel.dataset.loaded) {
         panel.dataset.loaded = '1';
         loaders[tab](classId);
       }

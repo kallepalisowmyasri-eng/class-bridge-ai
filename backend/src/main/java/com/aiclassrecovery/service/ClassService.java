@@ -17,6 +17,7 @@ import com.aiclassrecovery.model.ClassRecord;
 import com.aiclassrecovery.model.Subject;
 import com.aiclassrecovery.model.Transcript;
 import com.aiclassrecovery.repository.ClassRecordRepository;
+import com.aiclassrecovery.repository.StudentProgressRepository;
 import com.aiclassrecovery.repository.SubjectRepository;
 
 @Service
@@ -26,6 +27,7 @@ public class ClassService {
 
     private final ClassRecordRepository classRecordRepository;
     private final SubjectRepository subjectRepository;
+    private final StudentProgressRepository studentProgressRepository;
     private final FileService fileService;
     private final MediaProcessingService mediaProcessingService;
     private final TranscriptionService transcriptionService;
@@ -34,6 +36,7 @@ public class ClassService {
 
     public ClassService(ClassRecordRepository classRecordRepository,
                         SubjectRepository subjectRepository,
+                        StudentProgressRepository studentProgressRepository,
                         FileService fileService,
                         MediaProcessingService mediaProcessingService,
                         TranscriptionService transcriptionService,
@@ -41,6 +44,7 @@ public class ClassService {
                         ApplicationContext applicationContext) {
         this.classRecordRepository = classRecordRepository;
         this.subjectRepository = subjectRepository;
+        this.studentProgressRepository = studentProgressRepository;
         this.fileService = fileService;
         this.mediaProcessingService = mediaProcessingService;
         this.transcriptionService = transcriptionService;
@@ -208,6 +212,23 @@ public class ClassService {
         return fileService.loadRecording(record.getRecordingPath());
     }
 
+    public Resource loadAudio(String userId, String classId) {
+        ClassRecord record = classRecordRepository.findById(classId)
+                .orElseThrow(() -> new RuntimeException("Class not found"));
+
+        if (!userId.equals(record.getUserId())) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        if (record.getAudioPath() != null) {
+            return fileService.loadRecording(record.getAudioPath());
+        }
+        if (record.getRecordingPath() != null) {
+            return fileService.loadRecording(record.getRecordingPath());
+        }
+        throw new RuntimeException("No audio or recording found for this class");
+    }
+
     public String getOriginalFilename(String userId, String classId) {
         ClassRecord record = classRecordRepository.findById(classId)
                 .orElseThrow(() -> new RuntimeException("Class not found"));
@@ -230,6 +251,7 @@ public class ClassService {
         fileService.deleteFile(record.getRecordingPath());
         mediaProcessingService.deleteAudio(record.getAudioPath());
         transcriptionService.deleteByClassId(classId);
+        studentProgressRepository.deleteByClassId(classId);
         classRecordRepository.delete(record);
     }
 

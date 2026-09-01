@@ -1301,6 +1301,154 @@ select.form-input { cursor: pointer; }
   justify-content: center;
 }
 
+/* ── Audio Player Widget ────────────────────────────────────────────────── */
+.audio-player-card {
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: var(--surface-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.audio-player-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.audio-play-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform var(--transition), background var(--transition);
+}
+.audio-play-btn:hover {
+  background: var(--primary-dark);
+  transform: scale(1.05);
+}
+.audio-track-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.audio-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.audio-timeline-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.audio-time {
+  font-family: 'DM Sans', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  min-width: 42px;
+}
+.audio-seek-slider {
+  flex: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: var(--radius-full);
+  outline: none;
+  cursor: pointer;
+}
+.audio-seek-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--primary);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.audio-seek-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+.audio-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.audio-speed-select {
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* ── Interactive Clickable Timestamps ──────────────────────────────────── */
+.clickable-ts {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-family: 'DM Sans', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  transition: all var(--transition);
+  user-select: none;
+}
+.clickable-ts:hover {
+  background: var(--primary);
+  color: white;
+  transform: translateY(-1px);
+}
+
+/* ── Announcements, Assignments, Resources, Explanations ──────────────── */
+.announcement-card, .assignment-card, .resource-card, .explanation-card {
+  padding: 16px 20px;
+  background: var(--surface-dim);
+  border-radius: var(--radius-md);
+  border-left: 4px solid var(--primary);
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.announcement-card { border-left-color: #f59e0b; }
+.assignment-card { border-left-color: #ef4444; }
+.resource-card { border-left-color: #10b981; }
+.explanation-card { border-left-color: #6366f1; }
+
+.item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.item-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.item-desc {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
 /* ── Responsive ─────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {
   .app-container { padding: 20px 16px; }
