@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 @Service
 public class FileService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(FileService.class);
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("mp4", "mp3", "wav", "m4a");
     private static final long MAX_SIZE_BYTES = 2L * 1024 * 1024 * 1024; // 2GB
 
@@ -74,7 +75,8 @@ public class FileService {
         try {
             Files.deleteIfExists(Paths.get(filePath));
         } catch (IOException e) {
-            throw new RuntimeException("Failed to delete file", e);
+            // Best-effort: log but don't abort cascade deletes
+            log.warn("Could not delete file (ignored): {}", filePath, e);
         }
     }
 

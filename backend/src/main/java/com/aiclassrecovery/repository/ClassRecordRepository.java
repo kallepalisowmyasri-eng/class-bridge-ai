@@ -19,6 +19,9 @@ public interface ClassRecordRepository extends MongoRepository<ClassRecord, Stri
     /** Find all records for a specific subject by subject ID */
     List<ClassRecord> findBySubjectId(String subjectId);
 
+    /** Count records for a subject (single COUNT query — no full document load) */
+    long countBySubjectId(String subjectId);
+
     /** Find all records for a specific user and subject */
     List<ClassRecord> findByUserIdAndSubjectId(String userId, String subjectId);
 

@@ -10,7 +10,7 @@ learning material and personalized catch-up paths.
 
 - **Backend:** Java 17/21, Spring Boot, Spring Security, Maven
 - **Frontend:** HTML, CSS, JavaScript
-- **Database:** PostgreSQL
+- **Database:** MongoDB
 - **AI:** Gemini API
 - **Speech-to-Text:** Whisper / faster-whisper (Python)
 - **Media Processing:** FFmpeg

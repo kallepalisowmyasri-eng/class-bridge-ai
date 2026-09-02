@@ -37,12 +37,13 @@ public class LearningGapService {
     public LearningGapService(
             @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}") String apiUrl,
             @Value("${gemini.api.key:}") String apiKey,
-            ClassRecordRepository classRecordRepository) {
+            ClassRecordRepository classRecordRepository,
+            ObjectMapper objectMapper) {
         this.webClient = WebClient.builder().build();
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.classRecordRepository = classRecordRepository;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
     }
 
     public LearningGapResponse analyzeGaps(String userId, String classId) {

@@ -36,13 +36,14 @@ public class GeminiService {
             @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}") String apiUrl,
             @Value("${gemini.api.key:}") String apiKey,
             TranscriptRepository transcriptRepository,
-            ClassRecordRepository classRecordRepository) {
+            ClassRecordRepository classRecordRepository,
+            ObjectMapper objectMapper) {
         this.webClient = WebClient.builder().build();
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.transcriptRepository = transcriptRepository;
         this.classRecordRepository = classRecordRepository;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
     }
 
     public ClassRecord analyze(String classId) {
@@ -56,8 +57,19 @@ public class GeminiService {
             throw new RuntimeException("Gemini API key not configured. Set GEMINI_API_KEY env var.");
         }
 
-        String fullText = transcript.getFullText();
-        if (fullText == null || fullText.isBlank()) {
+        StringBuilder sb = new StringBuilder();
+        if (transcript.getSegments() != null && !transcript.getSegments().isEmpty()) {
+            for (Transcript.Segment seg : transcript.getSegments()) {
+                int min = (int) (seg.getStart() / 60);
+                int sec = (int) (seg.getStart() % 60);
+                sb.append(String.format("[%02d:%02d] %s\n", min, sec, seg.getText()));
+            }
+        } else {
+            sb.append(transcript.getFullText());
+        }
+        String fullText = sb.toString();
+
+        if (fullText.isBlank()) {
             throw new RuntimeException("Transcript is empty");
         }
 
@@ -108,13 +120,16 @@ public class GeminiService {
                 "  \"catchUpPath\": [\"step 1: ...\", \"step 2: ...\"],\n" +
                 "  \"importantTimestamps\": [{\"timestamp\": \"MM:SS or HH:MM:SS\", \"type\": \"EXPLANATION|ASSIGNMENT|ANNOUNCEMENT|EXAMPLE\", \"description\": \"what happened\"}],\n" +
                 "  \"revisionPoints\": [\"bullet point 1\", \"bullet point 2\"],\n" +
-                "  \"quizQuestions\": [{\"question\": \"...\", \"options\": [\"A\", \"B\", \"C\", \"D\"], \"correctIndex\": 0, \"sourceTimestamp\": \"MM:SS\"}]\n" +
+                "  \"quizQuestions\": [{\"question\": \"...\", \"options\": [\"first option text\", \"second option text\", \"third option text\", \"fourth option text\"], \"correctIndex\": 0, \"sourceTimestamp\": \"MM:SS\"}]\n" +
                 "}\n\n" +
                 "Rules:\n" +
                 "- All quiz questions must be answerable ONLY from the transcript content\n" +
                 "- Include at least 5 quiz questions if the transcript is long enough\n" +
+                "- Do NOT prefix options with letters (e.g. 'A)', 'B)') or numbers. Provide just the text.\n" +
                 "- \"priority\" must be exactly CRITICAL, HIGH, or MEDIUM\n" +
                 "- \"type\" must be exactly EXPLANATION, ASSIGNMENT, ANNOUNCEMENT, or EXAMPLE\n" +
+                "- DO NOT invent timestamps. If a timestamp is not available, leave the timestamp field empty or omit the item.\n" +
+                "- All extracted items MUST be grounded in the text.\n" +
                 "- Return ONLY the JSON, no other text\n\n" +
                 "TRANSCRIPT:\n" + transcriptText;
     }
@@ -128,7 +143,9 @@ public class GeminiService {
                 "- Merge mustLearn items, keeping highest priority\n" +
                 "- Merge catchUpPath sequentially\n" +
                 "- Merge importantTimestamps chronologically\n" +
+                "- DO NOT invent timestamps. If a timestamp is not available, leave the timestamp field empty or omit the item.\n" +
                 "- Provide a unified summary\n" +
+                "- Do NOT prefix quiz options with letters (e.g. 'A)', 'B)') or numbers. Provide just the text.\n" +
                 "- Return ONLY valid JSON, no markdown, no code fences\n\n" +
                 "JSON schema:\n" +
                 "{\n" +

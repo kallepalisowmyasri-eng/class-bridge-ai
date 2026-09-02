@@ -67,3 +67,13 @@ Desktop.ini
 
 # Maven wrapper
 .mvn/wrapper/maven-wrapper.jar
+
+# Test files & scratch
+scratch/
+*.mp4
+*.wav
+*.m4a
+payload.json
+test.txt
+tts_long*.ps1
+

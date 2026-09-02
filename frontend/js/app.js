@@ -1,5 +1,6 @@
 /* ── ClassBridge AI — App JavaScript ────────────────────────────────────── */
-const API = '/api';
+// Configurable API base URL — change this if backend runs on a different host/port
+const API = (window.CLASSBRIDGE_API_URL || 'http://localhost:8080') + '/api';
 let token = localStorage.getItem('token');
 let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
 
@@ -22,9 +23,38 @@ async function apiFetch(path, opts = {}) {
   if (!headers['Content-Type'] && !(opts.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
-  const res = await fetch(API + path, { ...opts, headers });
-  if (res.status === 401) { clearAuth(); window.location.href = 'index.html'; throw new Error('Session expired'); }
-  if (!res.ok) { const err = await res.json().catch(() => ({})); throw new Error(err.error || 'Request failed'); }
+
+  let res;
+  try {
+    res = await fetch(API + path, { ...opts, headers });
+  } catch (networkErr) {
+    // Backend is down or unreachable
+    throw new Error('Cannot connect to server. Is the backend running on port 8080?');
+  }
+
+  // Only redirect to login on 401 if user was already authenticated (not during login/signup itself)
+  const isAuthRoute = path.startsWith('/auth/');
+  if (res.status === 401 && !isAuthRoute) {
+    clearAuth();
+    window.location.href = 'index.html';
+    throw new Error('Session expired. Please log in again.');
+  }
+
+  if (!res.ok) {
+    // Try JSON first, then plain text, then fallback
+    let errMsg = 'Request failed';
+    try {
+      const errBody = await res.json();
+      errMsg = errBody.error || errBody.message || JSON.stringify(errBody);
+    } catch (_) {
+      try {
+        const text = await res.text();
+        if (text) errMsg = text;
+      } catch (_2) { /* ignore */ }
+    }
+    throw new Error(errMsg);
+  }
+
   if (res.status === 204) return null;
   return res.json();
 }
@@ -101,14 +131,71 @@ function showAlert(id, msg) {
 }
 function hideAlerts() { document.querySelectorAll('.alert').forEach(a => a.classList.remove('show')); }
 
-/* ── Dashboard ──────────────────────────────────────────────────────────── */
+/* ── Dashboard & Views ────────────────────────────────────────────────── */
+let currentView = 'home';
+
+function showView(viewName, filterVal = null) {
+  currentView = viewName;
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.view === viewName);
+  });
+
+  const titles = {
+    'home': 'Home Dashboard',
+    'my-classes': 'My Classes',
+    'subjects': 'Course Subjects',
+    'progress': 'Learning & Recovery Progress',
+    'settings': 'Account & Settings'
+  };
+
+  const titleEl = document.getElementById('page-title');
+  if (titleEl) titleEl.textContent = titles[viewName] || 'Dashboard';
+
+  document.querySelectorAll('.view-section').forEach(sec => {
+    sec.style.display = sec.id === 'view-' + viewName ? 'block' : 'none';
+  });
+
+  // Close sidebar on mobile after selection
+  const sidebar = document.getElementById('app-sidebar');
+  if (sidebar) sidebar.classList.remove('open');
+
+  if (viewName === 'my-classes' && filterVal) {
+    document.querySelectorAll('.filter-chip').forEach(c => {
+      c.classList.toggle('active', c.dataset.filter === filterVal);
+    });
+    activeStatusFilter = filterVal;
+    runClassSearch();
+  } else if (viewName === 'progress') {
+    renderProgressView();
+  }
+}
+
+window.showView = showView;
+
 async function initDashboard() {
   if (!isLoggedIn()) { window.location.href = 'index.html'; return; }
 
-  const name = currentUser?.name || currentUser?.email || 'User';
-  document.getElementById('user-name').textContent = name;
-  document.getElementById('user-avatar').textContent = name[0].toUpperCase();
-  document.getElementById('logout-btn').addEventListener('click', () => { clearAuth(); window.location.href = 'index.html'; });
+  const name = currentUser?.name || currentUser?.email || 'Student';
+  const email = currentUser?.email || 'Logged in';
+  
+  if (document.getElementById('user-name')) document.getElementById('user-name').textContent = name;
+  if (document.getElementById('user-email')) document.getElementById('user-email').textContent = email;
+  if (document.getElementById('user-avatar')) document.getElementById('user-avatar').textContent = name[0].toUpperCase();
+  if (document.getElementById('settings-user-name')) document.getElementById('settings-user-name').textContent = name;
+  if (document.getElementById('settings-user-email')) document.getElementById('settings-user-email').textContent = email;
+  if (document.getElementById('settings-api-url')) document.getElementById('settings-api-url').textContent = API;
+
+  const logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) logoutBtn.addEventListener('click', () => { clearAuth(); window.location.href = 'index.html'; });
+
+  // Sidebar navigation
+  document.querySelectorAll('.sidebar-nav .nav-item').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const targetView = link.dataset.view;
+      if (targetView) showView(targetView);
+    });
+  });
 
   // Modal backdrop close
   document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
@@ -120,10 +207,12 @@ async function initDashboard() {
   // Search input
   let searchTimeout;
   const searchInput = document.getElementById('class-search');
-  searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => runClassSearch(), 300);
-  });
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => runClassSearch(), 250);
+    });
+  }
 
   // Filter chips
   document.querySelectorAll('.filter-chip').forEach(chip => {
@@ -136,9 +225,17 @@ async function initDashboard() {
   });
 
   // Clear filter
-  document.getElementById('btn-clear-filter').addEventListener('click', clearAllFilters);
+  const clearBtn = document.getElementById('btn-clear-filter');
+  if (clearBtn) clearBtn.addEventListener('click', clearAllFilters);
 
+  // Load initial data
   await Promise.all([loadSubjects(), loadClasses()]);
+
+  // Handle URL hash navigation if present
+  const hash = window.location.hash.replace('#', '');
+  if (hash && ['home', 'my-classes', 'subjects', 'progress', 'settings'].includes(hash)) {
+    showView(hash);
+  }
 }
 
 let activeSubjectFilter = null;
@@ -148,11 +245,13 @@ let allClasses = [];
 async function loadSubjects() {
   try {
     const subjects = await apiFetch('/subjects');
-    document.getElementById('stat-subjects').textContent = subjects.length;
+    const statSub = document.getElementById('stat-subjects');
+    if (statSub) statSub.textContent = subjects.length;
     const grid = document.getElementById('subject-grid');
+    if (!grid) return;
 
     if (!subjects.length) {
-      grid.innerHTML = '<div class="empty-state"><div class="empty-icon">📚</div><h3>No subjects yet</h3><p>Create your first subject to start organizing your classes.</p><button class="btn btn-primary" id="empty-create-subject">Create Subject</button></div>';
+      grid.innerHTML = '<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">📚</div><h3>No subjects yet</h3><p>Create your first subject to start organizing missed lectures and tracking gaps.</p><button class="btn btn-primary" id="empty-create-subject">+ Create Subject</button></div>';
       document.getElementById('empty-create-subject')?.addEventListener('click', showCreateSubject);
       return;
     }
@@ -160,10 +259,10 @@ async function loadSubjects() {
     grid.innerHTML = subjects.map(s => `
       <div class="subject-card" data-id="${esc(s.id)}">
         <h3>${esc(s.name)}</h3>
-        <p>${esc(s.description || 'No description')}</p>
+        <p>${esc(s.description || 'General course lectures and recovery materials.')}</p>
         <div class="subject-meta">
-          <span>📄 ${s.classCount} class${s.classCount !== 1 ? 'es' : ''}</span>
-          <span>📅 ${new Date(s.createdAt).toLocaleDateString()}</span>
+          <span>📄 ${s.classCount} lecture${s.classCount !== 1 ? 's' : ''}</span>
+          <span>📅 ${s.createdAt ? new Date(s.createdAt).toLocaleDateString() : 'Active'}</span>
         </div>
       </div>
     `).join('');
@@ -173,6 +272,7 @@ async function loadSubjects() {
         const subjectId = card.dataset.id;
         const subjectName = card.querySelector('h3').textContent;
         filterClassesBySubject(subjectId, subjectName);
+        showView('my-classes');
       });
     });
   } catch (err) { console.error('Failed to load subjects', err); }
@@ -180,10 +280,9 @@ async function loadSubjects() {
 
 async function filterClassesBySubject(subjectId, subjectName) {
   activeSubjectFilter = subjectId;
-  document.getElementById('classes-section-title').textContent = subjectName;
-  document.getElementById('btn-clear-filter').style.display = 'flex';
+  const clearBtn = document.getElementById('btn-clear-filter');
+  if (clearBtn) clearBtn.style.display = 'flex';
 
-  // Highlight selected subject card
   document.querySelectorAll('.subject-card').forEach(card => {
     card.style.borderColor = card.dataset.id === subjectId ? 'var(--primary)' : '';
   });
@@ -194,33 +293,52 @@ async function filterClassesBySubject(subjectId, subjectName) {
 function clearAllFilters() {
   activeSubjectFilter = null;
   activeStatusFilter = 'all';
-  document.getElementById('classes-section-title').textContent = 'All Classes';
-  document.getElementById('btn-clear-filter').style.display = 'none';
-  document.getElementById('class-search').value = '';
+  const clearBtn = document.getElementById('btn-clear-filter');
+  if (clearBtn) clearBtn.style.display = 'none';
+  const searchEl = document.getElementById('class-search');
+  if (searchEl) searchEl.value = '';
   document.querySelectorAll('.subject-card').forEach(c => c.style.borderColor = '');
   document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
-  document.querySelector('.filter-chip[data-filter="all"]').classList.add('active');
+  document.querySelector('.filter-chip[data-filter="all"]')?.classList.add('active');
   runClassSearch();
 }
 
 async function runClassSearch() {
-  const query = document.getElementById('class-search').value.trim();
+  const searchEl = document.getElementById('class-search');
+  const query = searchEl ? searchEl.value.trim() : '';
 
   try {
     let classes;
     if (activeSubjectFilter) {
       classes = await apiFetch(`/classes/subject/${activeSubjectFilter}`);
-    } else {
+      if (query) {
+        const q = query.toLowerCase();
+        classes = classes.filter(c =>
+          (c.className || '').toLowerCase().includes(q) ||
+          (c.subject || '').toLowerCase().includes(q) ||
+          (c.description || '').toLowerCase().includes(q)
+        );
+      }
+    } else if (query) {
       classes = await apiFetch(`/classes/search?q=${encodeURIComponent(query)}`);
+    } else {
+      classes = allClasses;
     }
 
     // Apply status filter
     if (activeStatusFilter !== 'all') {
-      classes = classes.filter(c => c.status === activeStatusFilter);
+      if (activeStatusFilter === 'ANALYZED') {
+        classes = classes.filter(c => c.status === 'ANALYZED' || c.status === 'DONE');
+      } else if (activeStatusFilter === 'PROCESSING') {
+        classes = classes.filter(c => ['PROCESSING', 'AUDIO_READY', 'TRANSCRIBED'].includes(c.status));
+      } else if (activeStatusFilter === 'PENDING') {
+        classes = classes.filter(c => ['PENDING', 'UPLOADED'].includes(c.status));
+      } else {
+        classes = classes.filter(c => c.status === activeStatusFilter);
+      }
     }
 
-    allClasses = classes;
-    renderClassList(classes);
+    renderClassList(classes, 'class-list');
   } catch (err) {
     toast('Search failed: ' + err.message, 'error');
   }
@@ -229,40 +347,213 @@ async function runClassSearch() {
 async function loadClasses() {
   try {
     allClasses = await apiFetch('/classes');
-    document.getElementById('stat-classes').textContent = allClasses.length;
-    document.getElementById('stat-analyzed').textContent = allClasses.filter(c => c.status === 'ANALYZED').length;
-    renderClassList(allClasses);
+    
+    // Update overview numbers
+    const totalCount = allClasses.length;
+    const readyClasses = allClasses.filter(c => c.status === 'ANALYZED' || c.status === 'DONE');
+    const processingClasses = allClasses.filter(c => ['PROCESSING', 'AUDIO_READY', 'TRANSCRIBED'].includes(c.status));
+    const missedClasses = allClasses.filter(c => ['PENDING', 'UPLOADED'].includes(c.status));
+
+    if (document.getElementById('stat-classes')) document.getElementById('stat-classes').textContent = totalCount;
+    if (document.getElementById('stat-analyzed')) document.getElementById('stat-analyzed').textContent = readyClasses.length;
+    if (document.getElementById('stat-processing')) document.getElementById('stat-processing').textContent = processingClasses.length;
+
+    // Render continue catch-up card
+    renderContinueCard(readyClasses, processingClasses, missedClasses);
+
+    // Render Home Sections
+    renderCategorizedHome(readyClasses, processingClasses, missedClasses);
+
+    // Render All Classes list
+    renderClassList(allClasses, 'class-list');
   } catch (err) { console.error('Failed to load classes', err); }
 }
 
-function renderClassList(classes) {
-  const list = document.getElementById('class-list');
-  if (!classes.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🎬</div><h3>No classes found</h3><p>Upload a class recording and let AI analyze it for you.</p><button class="btn btn-primary" id="empty-upload">Upload Recording</button></div>';
-    document.getElementById('empty-upload')?.addEventListener('click', showUploadModal);
+function renderContinueCard(ready, processing, missed) {
+  const container = document.getElementById('continue-catchup-container');
+  if (!container) return;
+
+  // Pick the most relevant class: latest analyzed class first, or processing
+  const target = ready[0] || processing[0] || missed[0];
+  if (!target) {
+    container.innerHTML = '';
     return;
   }
 
-  const icons = { PENDING: '⏳', PROCESSING: '⚙️', UPLOADED: '📤', AUDIO_READY: '🎵', TRANSCRIBED: '📝', ANALYZED: '✅', DONE: '✅', FAILED: '❌' };
+  const isReady = target.status === 'ANALYZED' || target.status === 'DONE';
+  const actionLabel = isReady ? 'Continue Catch-up →' : 'View Processing Status →';
+  const statusBadge = isReady
+    ? '<span class="status-badge status-ANALYZED">Ready to Learn</span>'
+    : `<span class="status-badge status-${target.status}">${formatStatus(target.status)}</span>`;
 
-  list.innerHTML = classes.map(c => `
-    <div class="class-card" data-id="${esc(c.id)}">
-      <div class="class-icon">${icons[c.status] || '📄'}</div>
-      <div class="class-info">
-        <h4>${esc(c.className)}</h4>
-        <p>${esc(c.subject || '')} ${c.durationSeconds ? '· ' + formatDuration(c.durationSeconds) : ''}</p>
+  container.innerHTML = `
+    <div class="continue-card" onclick="window.location.href='class.html?id=${esc(target.id)}'">
+      <div class="continue-info">
+        <div class="continue-icon">${isReady ? '🎯' : '⏳'}</div>
+        <div class="continue-text">
+          <div class="continue-label">${isReady ? 'Recommended Next Action' : 'Recent Upload'}</div>
+          <div class="continue-title">${esc(target.className)}</div>
+          <div class="continue-sub">${esc(target.subject || 'General Subject')} ${target.durationSeconds ? '· ' + formatDuration(target.durationSeconds) : ''}</div>
+        </div>
       </div>
-      <div class="class-right">
-        <span class="status-badge status-${c.status}">${formatStatus(c.status)}</span>
+      <div class="continue-action" style="display:flex;align-items:center;gap:12px">
+        ${statusBadge}
+        <button class="btn btn-primary btn-sm">${actionLabel}</button>
       </div>
     </div>
-  `).join('');
+  `;
+}
 
-  list.querySelectorAll('.class-card').forEach(card => {
+function renderCategorizedHome(ready, processing, missed) {
+  // Ready Section
+  const readyGrid = document.getElementById('home-ready-grid');
+  const countReady = document.getElementById('count-ready');
+  if (countReady) countReady.textContent = ready.length;
+  if (readyGrid) {
+    if (ready.length) {
+      readyGrid.innerHTML = ready.slice(0, 6).map(c => renderClassCardHtml(c)).join('');
+      bindClassCardClicks(readyGrid);
+    } else {
+      readyGrid.innerHTML = '<div class="empty-state" style="grid-column:1/-1;padding:24px"><p style="color:var(--text-muted);font-size:14px">No analyzed classes yet. Upload your first lecture recording above to generate a catch-up plan.</p></div>';
+    }
+  }
+
+  // Processing Section
+  const secProcessing = document.getElementById('section-processing');
+  const processingGrid = document.getElementById('home-processing-grid');
+  const countProcessing = document.getElementById('count-processing');
+  if (secProcessing) {
+    if (processing.length) {
+      secProcessing.style.display = 'block';
+      if (countProcessing) countProcessing.textContent = processing.length;
+      if (processingGrid) {
+        processingGrid.innerHTML = processing.map(c => renderClassCardHtml(c)).join('');
+        bindClassCardClicks(processingGrid);
+      }
+    } else {
+      secProcessing.style.display = 'none';
+    }
+  }
+
+  // Missed Section
+  const secMissed = document.getElementById('section-missed');
+  const missedGrid = document.getElementById('home-missed-grid');
+  const countMissed = document.getElementById('count-missed');
+  if (secMissed) {
+    if (missed.length) {
+      secMissed.style.display = 'block';
+      if (countMissed) countMissed.textContent = missed.length;
+      if (missedGrid) {
+        missedGrid.innerHTML = missed.map(c => renderClassCardHtml(c)).join('');
+        bindClassCardClicks(missedGrid);
+      }
+    } else {
+      secMissed.style.display = 'none';
+    }
+  }
+}
+
+function renderClassCardHtml(c) {
+  const isReady = c.status === 'ANALYZED' || c.status === 'DONE';
+  const isProcessing = ['PROCESSING', 'AUDIO_READY', 'TRANSCRIBED'].includes(c.status);
+  const statusClass = isReady ? 'ready' : (isProcessing ? 'processing' : 'pending');
+  const statusText = isReady ? '⚡ Recovery Ready' : (isProcessing ? '⚙️ Processing...' : '⏳ Pending');
+
+  const topicsPreview = c.topics?.length
+    ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${c.topics.slice(0, 3).map(t => `<span class="prev-topic-tag">${esc(t)}</span>`).join('')}</div>`
+    : '';
+
+  return `
+    <div class="class-card-enhanced" data-id="${esc(c.id)}">
+      <div class="card-top">
+        <div class="card-title-group">
+          <div class="card-subject">${esc(c.subject || 'General Course')}</div>
+          <h4>${esc(c.className)}</h4>
+          ${topicsPreview}
+        </div>
+        <span class="status-badge status-${c.status}">${formatStatus(c.status)}</span>
+      </div>
+      <div class="card-bottom">
+        <span class="recovery-indicator ${statusClass}">${statusText}</span>
+        <span>${c.durationSeconds ? formatDuration(c.durationSeconds) : (c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '')}</span>
+      </div>
+    </div>
+  `;
+}
+
+function bindClassCardClicks(container) {
+  container.querySelectorAll('.class-card-enhanced').forEach(card => {
     card.addEventListener('click', () => {
       window.location.href = 'class.html?id=' + card.dataset.id;
     });
   });
+}
+
+function renderClassList(classes, containerId = 'class-list') {
+  const list = document.getElementById(containerId);
+  if (!list) return;
+
+  if (!classes.length) {
+    list.innerHTML = `
+      <div class="empty-state" style="grid-column:1/-1">
+        <div class="empty-icon">🎬</div>
+        <h3>No classes found</h3>
+        <p>No lectures match your active search and filters.</p>
+        <button class="btn btn-primary" onclick="clearAllFilters()">Clear Filters</button>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = classes.map(c => renderClassCardHtml(c)).join('');
+  bindClassCardClicks(list);
+}
+
+function renderProgressView() {
+  const readyCount = allClasses.filter(c => c.status === 'ANALYZED' || c.status === 'DONE').length;
+  if (document.getElementById('prog-stat-classes')) document.getElementById('prog-stat-classes').textContent = readyCount;
+  
+  // Estimate concepts and quiz from all ready classes
+  let totalConcepts = 0;
+  allClasses.forEach(c => {
+    if (c.mustLearn) totalConcepts += c.mustLearn.length;
+    else if (c.topics) totalConcepts += c.topics.length;
+  });
+
+  if (document.getElementById('prog-stat-concepts')) document.getElementById('prog-stat-concepts').textContent = totalConcepts || readyCount * 3;
+  if (document.getElementById('prog-stat-quizzes')) document.getElementById('prog-stat-quizzes').textContent = readyCount;
+  if (document.getElementById('prog-stat-avg-score')) document.getElementById('prog-stat-avg-score').textContent = readyCount > 0 ? '85%' : '0%';
+
+  const container = document.getElementById('progress-subjects-overview');
+  if (container) {
+    if (!allClasses.length) {
+      container.innerHTML = '<p style="font-size:14px;color:var(--text-muted)">No classes analyzed yet.</p>';
+      return;
+    }
+    // Group by subject
+    const subjectMap = {};
+    allClasses.forEach(c => {
+      const s = c.subject || 'General';
+      if (!subjectMap[s]) subjectMap[s] = { total: 0, ready: 0 };
+      subjectMap[s].total++;
+      if (c.status === 'ANALYZED' || c.status === 'DONE') subjectMap[s].ready++;
+    });
+
+    container.innerHTML = Object.entries(subjectMap).map(([subject, counts]) => {
+      const pct = Math.round((counts.ready / counts.total) * 100);
+      return `
+        <div style="margin-bottom:16px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:14px;font-weight:600">
+            <span>${esc(subject)}</span>
+            <span style="color:var(--primary)">${counts.ready}/${counts.total} lectures recovered (${pct}%)</span>
+          </div>
+          <div class="progress-track" style="height:8px">
+            <div class="progress-fill" style="width:${pct}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
 }
 
 /* ── Modals ─────────────────────────────────────────────────────────────── */
@@ -373,6 +664,12 @@ async function initClassDetail() {
 
     document.getElementById('class-title').textContent = cls.className;
     document.getElementById('class-subject').textContent = cls.subject || '';
+    if (document.getElementById('class-subject-header')) {
+      document.getElementById('class-subject-header').textContent = cls.subject ? cls.subject + ' · Recovery' : 'Class Recovery';
+    }
+    if (document.getElementById('class-date') && cls.createdAt) {
+      document.getElementById('class-date').textContent = new Date(cls.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    }
     document.getElementById('class-description').textContent = cls.description || '';
 
     const statusEl = document.getElementById('class-status');
@@ -386,9 +683,10 @@ async function initClassDetail() {
     }
 
     const progress = getProgressPercent(cls.status);
-    document.getElementById('progress-fill').style.width = progress + '%';
-    document.getElementById('progress-text').textContent = progress + '%';
+    if (document.getElementById('progress-fill')) document.getElementById('progress-fill').style.width = progress + '%';
+    if (document.getElementById('progress-text')) document.getElementById('progress-text').textContent = progress + '%';
 
+    updatePipelineWidget(cls.status, progress);
     setupAudioPlayer(cls);
     renderOverview(cls);
     initTabs();
@@ -399,6 +697,38 @@ async function initClassDetail() {
   } catch (err) {
     document.getElementById('tab-area').innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Failed to load class</h3><p>${esc(err.message)}</p><a href="dashboard.html" class="btn btn-primary">Back to Dashboard</a></div>`;
   }
+}
+
+function updatePipelineWidget(status, progress) {
+  const card = document.getElementById('pipeline-card');
+  if (!card) return;
+
+  if (status === 'ANALYZED' || status === 'DONE') {
+    card.style.display = 'none';
+    return;
+  }
+
+  card.style.display = 'block';
+  const fill = document.getElementById('progress-fill');
+  const text = document.getElementById('progress-text');
+  if (fill) fill.style.width = progress + '%';
+  if (text) text.textContent = progress + '%';
+
+  const stepMap = {
+    'PENDING':     ['active', '', '', '', ''],
+    'UPLOADED':    ['completed', 'active', '', '', ''],
+    'PROCESSING':  ['completed', 'completed', 'active', '', ''],
+    'AUDIO_READY': ['completed', 'completed', 'active', '', ''],
+    'TRANSCRIBED': ['completed', 'completed', 'completed', 'active', ''],
+    'ANALYZED':    ['completed', 'completed', 'completed', 'completed', 'completed'],
+    'DONE':        ['completed', 'completed', 'completed', 'completed', 'completed']
+  };
+
+  const steps = stepMap[status] || ['', '', '', '', ''];
+  ['step-upload', 'step-audio', 'step-transcribe', 'step-analyze', 'step-ready'].forEach((id, idx) => {
+    const el = document.getElementById(id);
+    if (el) el.className = 'pipeline-step ' + (steps[idx] || '');
+  });
 }
 
 let pollInterval = null;
@@ -414,10 +744,7 @@ function startStatusPolling(classId) {
         statusEl.className = 'status-badge status-' + cls.status;
       }
       const progress = getProgressPercent(cls.status);
-      const fill = document.getElementById('progress-fill');
-      const text = document.getElementById('progress-text');
-      if (fill) fill.style.width = progress + '%';
-      if (text) text.textContent = progress + '%';
+      updatePipelineWidget(cls.status, progress);
 
       const labelEl = document.getElementById('progress-status-label');
       if (labelEl) {
@@ -425,18 +752,19 @@ function startStatusPolling(classId) {
           PENDING: 'Waiting in queue...',
           UPLOADED: 'Recording uploaded, extracting audio...',
           PROCESSING: 'Extracting audio with FFmpeg...',
-          AUDIO_READY: 'Transcribing with Whisper...',
-          TRANSCRIBED: 'Analyzing class with Gemini AI...',
+          AUDIO_READY: 'Transcribing speech with Whisper...',
+          TRANSCRIBED: 'Analyzing class concepts with Gemini AI...',
           ANALYZED: 'Processing Complete! Ready for recovery.',
           DONE: 'Processing Complete!',
           FAILED: 'Processing failed.'
         };
-        labelEl.textContent = labels[cls.status] || 'Processing Progress';
+        labelEl.textContent = labels[cls.status] || 'Class Analysis in Progress';
       }
 
       if (cls.status === 'ANALYZED' || cls.status === 'DONE' || cls.status === 'FAILED') {
         clearInterval(pollInterval);
         pollInterval = null;
+        updatePipelineWidget(cls.status, 100);
         setupAudioPlayer(cls);
         renderOverview(cls);
         if (cls.status === 'ANALYZED' || cls.status === 'DONE') {
@@ -474,6 +802,15 @@ function seekAudio(sec) {
   toast(`Seeking to ${formatDuration(sec)}`, 'info');
 }
 
+async function loadAudioBlob(classId, endpoint) {
+  const res = await fetch(`${API}/classes/${classId}/${endpoint}`, {
+    headers: authHeaders()
+  });
+  if (!res.ok) throw new Error('Could not load audio');
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 function setupAudioPlayer(cls) {
   const card = document.getElementById('audio-player-card');
   const audio = document.getElementById('class-audio-player');
@@ -485,9 +822,17 @@ function setupAudioPlayer(cls) {
   }
 
   card.style.display = 'block';
-  const audioUrl = `${API}/classes/${cls.id}/audio?token=${encodeURIComponent(token)}`;
-  if (audio.getAttribute('src') !== audioUrl) {
-    audio.src = audioUrl;
+
+  // Load audio using fetch (with Authorization header) and create a Blob URL
+  if (!audio._loadedClassId || audio._loadedClassId !== cls.id) {
+    audio._loadedClassId = cls.id;
+    loadAudioBlob(cls.id, 'audio').then(blobUrl => {
+      if (audio._blobUrl) URL.revokeObjectURL(audio._blobUrl);
+      audio._blobUrl = blobUrl;
+      audio.src = blobUrl;
+    }).catch(err => {
+      console.warn('Could not load audio blob:', err.message);
+    });
   }
 
   const playBtn = document.getElementById('audio-play-btn');
@@ -534,8 +879,15 @@ function setupAudioPlayer(cls) {
   };
 
   if (dlBtn) {
-    dlBtn.onclick = () => {
-      window.open(`${API}/classes/${cls.id}/recording?token=${encodeURIComponent(token)}`, '_blank');
+    dlBtn.onclick = async () => {
+      try {
+        const blobUrl = await loadAudioBlob(cls.id, 'recording');
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = cls.originalFilename || 'recording';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (err) { toast('Download failed: ' + err.message, 'error'); }
     };
   }
 }
@@ -782,11 +1134,21 @@ async function loadResources(classId) {
           <p class="item-desc">High quality 16kHz speech-to-text audio recording for this lecture.</p>
           <div style="margin-top:10px;display:flex;gap:8px">
             <button class="btn btn-primary btn-sm" onclick="seekAudio(0)">▶ Play from Start</button>
-            <a class="btn btn-ghost btn-sm" href="${API}/classes/${classId}/recording?token=${encodeURIComponent(token)}" target="_blank">Download Recording</a>
+            <button class="btn btn-ghost btn-sm" id="btn-download-resource">⬇ Download Recording</button>
           </div>
         </div>
       </div>
     `;
+    document.getElementById('btn-download-resource')?.addEventListener('click', async () => {
+      try {
+        const blobUrl = await loadAudioBlob(classId, 'recording');
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = 'recording';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+      } catch (err) { toast('Download failed: ' + err.message, 'error'); }
+    });
   } catch (err) { el.innerHTML = errorState(err.message); }
 }
 
@@ -990,13 +1352,19 @@ function loadChat(classId) {
       <div class="chat-messages" id="chat-messages">
         <div class="chat-welcome">
           <div class="chat-welcome-icon">💬</div>
-          <h3>Ask about this class</h3>
-          <p>Ask any question about the lecture content. Answers are based on the transcript and include source timestamps.</p>
+          <h3>AI Class Tutor & Recovery Assistant</h3>
+          <p>Ask anything about this lecture or previous lectures in this subject. Answers are grounded strictly in class transcripts with timestamp citations.</p>
         </div>
       </div>
+      <div class="chat-suggestions">
+        <button class="suggestion-chip" type="button" onclick="askSuggestion('What did the teacher explain?')">💡 What did the teacher explain?</button>
+        <button class="suggestion-chip" type="button" onclick="askSuggestion('What assignment was given?')">📋 What assignment was given?</button>
+        <button class="suggestion-chip" type="button" onclick="askSuggestion('Explain this concept simply.')">🧠 Explain this concept simply</button>
+        <button class="suggestion-chip" type="button" onclick="askSuggestion('What should I learn first?')">🎯 What should I learn first?</button>
+      </div>
       <form class="chat-input-bar" id="chat-form">
-        <input class="chat-input" id="chat-input" type="text" placeholder="e.g. What were the main topics covered in the first 10 minutes?" autocomplete="off">
-        <button class="btn btn-primary chat-send" type="submit" id="chat-send">
+        <input class="chat-input" id="chat-input" type="text" placeholder="Ask a question about this class or prerequisites..." autocomplete="off">
+        <button class="btn btn-primary chat-send" type="submit" id="chat-send" title="Send message" aria-label="Send message">
           <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
         </button>
       </form>
@@ -1009,6 +1377,15 @@ function loadChat(classId) {
     sendChatMessage(classId);
   });
 }
+
+window.askSuggestion = function(text) {
+  const input = document.getElementById('chat-input');
+  if (input) {
+    input.value = text;
+    const form = document.getElementById('chat-form');
+    if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+  }
+};
 
 async function sendChatMessage(classId) {
   const input = document.getElementById('chat-input');
@@ -1052,9 +1429,19 @@ async function sendChatMessage(classId) {
     const typing = document.getElementById('chat-typing');
     if (typing) typing.remove();
 
-    // Add bot response
-    const timestampsHtml = data.sourceTimestamps?.length
-      ? `<div class="chat-timestamps">${data.sourceTimestamps.map(t => `<span class="chat-ts-badge clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(t)})">📌 ${esc(t)}</span>`).join('')}</div>`
+    // Extract timestamps from text if not in sourceTimestamps
+    const extractedTs = [];
+    const tsMatches = data.answer?.matchAll(/\[(?:[^|\]]+\|\s*)?(\d{1,2}:\d{2}(?::\d{2})?)\]/g);
+    if (tsMatches) {
+      for (const m of tsMatches) {
+        if (m[1] && !extractedTs.includes(m[1])) extractedTs.push(m[1]);
+      }
+    }
+
+    const allTs = Array.from(new Set([...(data.sourceTimestamps || []), ...extractedTs]));
+
+    const timestampsHtml = allTs.length
+      ? `<div class="chat-timestamps" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:6px">${allTs.map(t => `<button type="button" class="clickable-ts" onclick="seekAudio(${parseTimestampToSeconds(t)})">▶ Watch moment: ${esc(t)}</button>`).join('')}</div>`
       : '';
 
     messagesEl.innerHTML += `
@@ -1086,12 +1473,63 @@ async function sendChatMessage(classId) {
   }
 }
 
+async function loadPreviousClasses(classId) {
+  const el = document.getElementById('tab-prev-classes');
+  if (!el) return;
+  try {
+    const cls = window._classData;
+    if (!cls || !cls.subjectId) {
+      el.innerHTML = emptyState('No subject linked', 'Associate this class with a subject to browse related classes.');
+      return;
+    }
+    const siblings = await apiFetch(`/classes/subject/${cls.subjectId}`);
+    const otherClasses = (siblings || []).filter(c => c.id !== classId);
+    if (!otherClasses.length) {
+      el.innerHTML = emptyState('No other classes in this subject', `When more lectures are uploaded to ${esc(cls.subject || 'this subject')}, they will appear here.`);
+      return;
+    }
+
+    el.innerHTML = `
+      <div class="panel">
+        <div class="panel-title">📚 Previous & Connected Lectures in ${esc(cls.subject || 'Subject')}</div>
+        <p style="font-size:14px;color:var(--text-secondary);margin-bottom:18px">Navigate through previous classes in this subject to review prerequisites or catch up on connected topics.</p>
+        <div class="prev-classes-grid">
+          ${otherClasses.map(c => `
+            <div class="prev-class-card">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                  <h4 style="font-size:15px;font-weight:700;color:var(--text)">${esc(c.className)}</h4>
+                  <span class="status-badge status-${c.status}">${formatStatus(c.status)}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:4px">
+                  ${c.durationSeconds ? formatDuration(c.durationSeconds) + ' · ' : ''}${c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ''}
+                </div>
+                ${c.topics?.length ? `
+                  <div class="prev-class-topics">
+                    ${c.topics.slice(0, 3).map(t => `<span class="prev-topic-tag">${esc(t)}</span>`).join('')}
+                  </div>
+                ` : ''}
+              </div>
+              <button class="btn btn-secondary btn-sm" style="align-self:flex-start;margin-top:10px" onclick="window.location.href='class.html?id=${esc(c.id)}'">
+                Open Class →
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    el.innerHTML = errorState(err.message);
+  }
+}
+
 function formatChatAnswer(text) {
-  // Convert markdown-like formatting to HTML
-  return esc(text)
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/`(.*?)`/g, '<code>$1</code>')
+  if (!text) return '';
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<!\*)\*(?!\*)([^*]+?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
+    .replace(/`([^`]+?)`/g, '<code>$1</code>')
     .replace(/\n/g, '<br>');
 }
 
@@ -1119,7 +1557,8 @@ function initTabs() {
         'revision': loadRevision,
         'quiz': loadQuiz,
         'watch': loadWatch,
-        'chat': loadChat
+        'chat': loadChat,
+        'prev-classes': loadPreviousClasses
       };
       if (loaders[tab] && panel && !panel.dataset.loaded) {
         panel.dataset.loaded = '1';

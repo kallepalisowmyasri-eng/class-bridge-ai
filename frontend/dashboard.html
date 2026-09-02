@@ -3,95 +3,260 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard — ClassBridge AI</title>
+  <title>ClassBridge AI — Recover Missed Classes</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎓</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
-  <header class="app-header">
-    <a href="dashboard.html" class="logo">Class<span>Bridge</span> AI</a>
-    <div class="header-actions">
-      <div class="user-pill">
-        <div class="user-avatar" id="user-avatar">?</div>
-        <span id="user-name">User</span>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar" id="app-sidebar">
+      <div class="sidebar-brand">
+        <a href="dashboard.html" class="logo">
+          🎓 Class<span>Bridge</span> AI
+        </a>
+        <span class="sidebar-tagline">Catch up smarter, not longer</span>
       </div>
-      <button class="btn btn-ghost btn-sm" id="logout-btn">Log out</button>
-    </div>
-  </header>
 
-  <div class="app-container">
-    <div class="dash-hero">
-      <h1>Welcome back 👋</h1>
-      <p>Recover missed classes in minutes, not hours.</p>
-      <div class="dash-actions">
-        <button class="btn btn-primary btn-lg" id="btn-upload-quick">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          Upload Recording
-        </button>
-        <button class="btn btn-secondary btn-lg" id="btn-create-subject">
-          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Subject
-        </button>
-      </div>
-    </div>
+      <nav class="sidebar-nav">
+        <a href="#home" class="nav-item active" data-view="home">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          Home
+        </a>
+        <a href="#my-classes" class="nav-item" data-view="my-classes">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>
+          My Classes
+        </a>
+        <a href="#subjects" class="nav-item" data-view="subjects">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+          Subjects
+        </a>
+        <a href="#progress" class="nav-item" data-view="progress">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Progress
+        </a>
+        <a href="#settings" class="nav-item" data-view="settings">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          Settings
+        </a>
+      </nav>
 
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="stat-value" id="stat-subjects">0</div>
-        <div class="stat-label">Subjects</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="stat-classes">0</div>
-        <div class="stat-label">Classes</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value" id="stat-analyzed">0</div>
-        <div class="stat-label">Analyzed</div>
-      </div>
-    </div>
-
-    <div class="section-header">
-      <h2 class="section-title">Subjects</h2>
-    </div>
-    <div class="subject-grid" id="subject-grid"></div>
-
-    <div class="section-header">
-      <h2 class="section-title" id="classes-section-title">All Classes</h2>
-      <div class="toolbar" id="classes-toolbar">
-        <div class="search-box">
-          <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input class="search-input" id="class-search" type="text" placeholder="Search classes...">
+      <div class="sidebar-footer">
+        <div class="user-profile-widget">
+          <div class="user-avatar" id="user-avatar">?</div>
+          <div class="user-profile-info">
+            <span class="user-profile-name" id="user-name">Student</span>
+            <span class="user-profile-role" id="user-email">Logged in</span>
+          </div>
         </div>
-        <div class="filter-chips" id="filter-chips">
-          <button class="filter-chip active" data-filter="all">All</button>
-          <button class="filter-chip" data-filter="ANALYZED">Analyzed</button>
-          <button class="filter-chip" data-filter="PENDING">Pending</button>
-          <button class="filter-chip" data-filter="PROCESSING">Processing</button>
-          <button class="filter-chip" data-filter="FAILED">Failed</button>
-        </div>
+        <button class="btn btn-ghost btn-sm btn-full" id="logout-btn">
+          <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sign out
+        </button>
       </div>
-      <button class="btn btn-ghost btn-sm" id="btn-clear-filter" style="display:none">
-        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        Clear Filter
-      </button>
-    </div>
-    <div class="class-list" id="class-list"></div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="mobile-menu-btn" id="mobile-menu-toggle" aria-label="Toggle Menu">
+            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <h2 class="section-title" id="page-title" style="margin:0;font-size:18px">Home Dashboard</h2>
+        </div>
+        <div class="topbar-right">
+          <button class="btn btn-secondary btn-sm" id="btn-create-subject">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New Subject
+          </button>
+          <button class="btn btn-primary btn-sm" id="btn-upload-quick">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            Upload Recording
+          </button>
+        </div>
+      </header>
+
+      <div class="content-body">
+        <!-- ── VIEW 1: HOME DASHBOARD ──────────────────────────────────────── -->
+        <section id="view-home" class="view-section">
+          <!-- Mission Tagline Banner -->
+          <div class="recovery-mission-card">
+            <div class="mission-tag">⚡ Academic Recovery Engine</div>
+            <h1>Missed the class?<br>Catch up smarter, not longer.</h1>
+            <p>ClassBridge AI converts multi-hour lecture recordings into concise, structured catch-up paths, high-priority concepts, learning gaps, and interactive quizzes.</p>
+          </div>
+
+          <!-- Continue Catch-up Card -->
+          <div id="continue-catchup-container"></div>
+
+          <!-- Overview Stats -->
+          <div class="stats-row">
+            <div class="stat-card">
+              <div class="stat-value" id="stat-subjects">0</div>
+              <div class="stat-label">Subjects</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-classes">0</div>
+              <div class="stat-label">Total Classes</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-analyzed" style="color:var(--success)">0</div>
+              <div class="stat-label">Recovery Ready</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" id="stat-processing" style="color:var(--warning)">0</div>
+              <div class="stat-label">In Processing</div>
+            </div>
+          </div>
+
+          <!-- Categorized Section: Recovery Ready -->
+          <div class="class-category-section" id="section-ready">
+            <div class="category-header">
+              <div class="category-title">
+                <span>🎯 Ready for Recovery</span>
+                <span class="category-badge" id="count-ready">0</span>
+              </div>
+              <a href="#my-classes" class="btn btn-ghost btn-sm" onclick="showView('my-classes', 'ANALYZED')">View all</a>
+            </div>
+            <div class="class-grid" id="home-ready-grid"></div>
+          </div>
+
+          <!-- Categorized Section: In Processing -->
+          <div class="class-category-section" id="section-processing" style="display:none">
+            <div class="category-header">
+              <div class="category-title">
+                <span>⚙️ Processing Pipeline</span>
+                <span class="category-badge" id="count-processing">0</span>
+              </div>
+            </div>
+            <div class="class-grid" id="home-processing-grid"></div>
+          </div>
+
+          <!-- Categorized Section: Missed / Unanalyzed -->
+          <div class="class-category-section" id="section-missed" style="display:none">
+            <div class="category-header">
+              <div class="category-title">
+                <span>⏳ Missed Classes (Pending Analysis)</span>
+                <span class="category-badge" id="count-missed">0</span>
+              </div>
+            </div>
+            <div class="class-grid" id="home-missed-grid"></div>
+          </div>
+        </section>
+
+        <!-- ── VIEW 2: MY CLASSES ──────────────────────────────────────────── -->
+        <section id="view-my-classes" class="view-section" style="display:none">
+          <div class="toolbar" id="classes-toolbar">
+            <div class="search-box">
+              <svg class="search-icon" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search-input" id="class-search" type="text" placeholder="Search by class name, subject, or topic...">
+            </div>
+            <div class="filter-chips" id="filter-chips">
+              <button class="filter-chip active" data-filter="all">All</button>
+              <button class="filter-chip" data-filter="ANALYZED">Recovery Ready</button>
+              <button class="filter-chip" data-filter="PROCESSING">Processing</button>
+              <button class="filter-chip" data-filter="PENDING">Missed / Pending</button>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-clear-filter" style="display:none">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Clear Filter
+            </button>
+          </div>
+          <div class="class-grid" id="class-list"></div>
+        </section>
+
+        <!-- ── VIEW 3: SUBJECTS ────────────────────────────────────────────── -->
+        <section id="view-subjects" class="view-section" style="display:none">
+          <div class="section-header">
+            <h2 class="section-title">Course Subjects</h2>
+            <p style="font-size:14px;color:var(--text-muted);margin:0">Classes organized by subject for cross-class prerequisite tracking.</p>
+          </div>
+          <div class="subject-grid" id="subject-grid"></div>
+        </section>
+
+        <!-- ── VIEW 4: PROGRESS ────────────────────────────────────────────── -->
+        <section id="view-progress" class="view-section" style="display:none">
+          <div class="section-header">
+            <h2 class="section-title">Recovery & Learning Progress</h2>
+          </div>
+          <div class="progress-summary-grid">
+            <div class="progress-summary-card">
+              <div class="progress-summary-val" id="prog-stat-classes">0</div>
+              <div class="progress-summary-label">Classes Recovered</div>
+            </div>
+            <div class="progress-summary-card">
+              <div class="progress-summary-val" id="prog-stat-concepts" style="color:var(--success)">0</div>
+              <div class="progress-summary-label">Mastered Concepts</div>
+            </div>
+            <div class="progress-summary-card">
+              <div class="progress-summary-val" id="prog-stat-quizzes" style="color:var(--warning)">0</div>
+              <div class="progress-summary-label">Quizzes Completed</div>
+            </div>
+            <div class="progress-summary-card">
+              <div class="progress-summary-val" id="prog-stat-avg-score">0%</div>
+              <div class="progress-summary-label">Average Score</div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">📚 Subjects Recovery Health</div>
+            <div id="progress-subjects-overview">
+              <p style="font-size:14px;color:var(--text-muted)">Loading your subject mastery metrics...</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── VIEW 5: SETTINGS ────────────────────────────────────────────── -->
+        <section id="view-settings" class="view-section" style="display:none">
+          <div class="section-header">
+            <h2 class="section-title">Account & Preferences</h2>
+          </div>
+          <div class="panel" style="max-width:600px">
+            <div class="panel-title">👤 Student Profile</div>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:12px">
+              <div>
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600">Full Name</span>
+                <p id="settings-user-name" style="font-size:15px;font-weight:600;color:var(--text)">Student</p>
+              </div>
+              <div>
+                <span style="font-size:12px;color:var(--text-muted);font-weight:600">Email Address</span>
+                <p id="settings-user-email" style="font-size:15px;font-weight:600;color:var(--text)">email@example.com</p>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="max-width:600px;margin-top:20px">
+            <div class="panel-title">⚙️ System & Server</div>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px;font-size:14px">
+              <div style="display:flex;justify-content:space-between">
+                <span style="color:var(--text-muted)">Backend API:</span>
+                <code id="settings-api-url" style="background:var(--surface-dim);padding:2px 8px;border-radius:4px">http://localhost:8080/api</code>
+              </div>
+              <div style="display:flex;justify-content:space-between">
+                <span style="color:var(--text-muted)">Platform:</span>
+                <span style="font-weight:600;color:var(--success)">ClassBridge AI v1.2</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
   </div>
 
   <!-- Create Subject Modal -->
   <div class="modal-backdrop" id="subject-modal">
     <div class="modal">
-      <h2>New Subject</h2>
+      <h2>Create New Subject</h2>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:20px">Organize your classes to unlock learning gap analysis across lectures.</p>
       <form id="create-subject-form">
         <div class="form-group">
-          <label class="form-label">Subject Name</label>
-          <input class="form-input" id="subject-name" placeholder="e.g. Data Structures" required>
+          <label class="form-label" for="subject-name">Subject Name</label>
+          <input class="form-input" id="subject-name" placeholder="e.g. Data Structures & Algorithms" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Description (optional)</label>
-          <input class="form-input" id="subject-desc" placeholder="e.g. CS201 — Fall 2026">
+          <label class="form-label" for="subject-desc">Description (optional)</label>
+          <input class="form-input" id="subject-desc" placeholder="e.g. CS201 — Fall Semester">
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-cancel-subject">Cancel</button>
@@ -105,25 +270,26 @@
   <div class="modal-backdrop" id="upload-modal">
     <div class="modal">
       <h2>Upload Class Recording</h2>
+      <p style="font-size:14px;color:var(--text-muted);margin-bottom:20px">Upload the missed class audio or video to trigger automatic AI recovery.</p>
       <form id="upload-form">
         <div class="form-group">
-          <label class="form-label">Subject</label>
+          <label class="form-label" for="upload-subject">Subject</label>
           <select class="form-input" id="upload-subject" required>
             <option value="">Select a subject...</option>
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Class Name</label>
-          <input class="form-input" id="upload-class-name" placeholder="e.g. Lecture 08 — Binary Search" required>
+          <label class="form-label" for="upload-class-name">Class Title</label>
+          <input class="form-input" id="upload-class-name" placeholder="e.g. Lecture 03 — Binary Search & Trees" required>
         </div>
         <div class="form-group">
-          <label class="form-label">Description (optional)</label>
-          <input class="form-input" id="upload-desc" placeholder="What was covered in this class">
+          <label class="form-label" for="upload-desc">Notes or Topic Overview (optional)</label>
+          <input class="form-input" id="upload-desc" placeholder="Brief notes about what was taught">
         </div>
         <div class="form-group">
-          <label class="form-label">Recording File</label>
+          <label class="form-label" for="upload-file">Recording Media File</label>
           <input class="form-input" type="file" id="upload-file" accept=".mp4,.mp3,.wav,.m4a" required>
-          <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Supports MP4, MP3, WAV, M4A — up to 2GB</p>
+          <p style="font-size:12px;color:var(--text-muted);margin-top:4px">Supports MP4, MP3, WAV, M4A up to 2GB</p>
         </div>
         <div class="modal-actions">
           <button type="button" class="btn btn-ghost" id="btn-cancel-upload">Cancel</button>
@@ -147,6 +313,9 @@
     document.getElementById('btn-cancel-upload').addEventListener('click', () => closeModal('upload-modal'));
     document.getElementById('create-subject-form').addEventListener('submit', createSubject);
     document.getElementById('upload-form').addEventListener('submit', handleUpload);
+    document.getElementById('mobile-menu-toggle')?.addEventListener('click', () => {
+      document.getElementById('app-sidebar').classList.toggle('open');
+    });
   </script>
 </body>
 </html>

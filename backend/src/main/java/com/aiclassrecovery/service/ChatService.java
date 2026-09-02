@@ -42,13 +42,14 @@ public class ChatService {
             @Value("${gemini.api.url:https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent}") String apiUrl,
             @Value("${gemini.api.key:}") String apiKey,
             TranscriptRepository transcriptRepository,
-            ClassRecordRepository classRecordRepository) {
+            ClassRecordRepository classRecordRepository,
+            ObjectMapper objectMapper) {
         this.webClient = WebClient.builder().build();
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.transcriptRepository = transcriptRepository;
         this.classRecordRepository = classRecordRepository;
-        this.objectMapper = new ObjectMapper();
+        this.objectMapper = objectMapper;
     }
 
     public ChatResponse chat(String userId, String classId, String question) {
@@ -59,20 +60,71 @@ public class ChatService {
             throw new AccessDeniedException("Access denied");
         }
 
-        Transcript transcript = transcriptRepository.findByClassId(classId)
-                .orElseThrow(() -> new RuntimeException("Transcript not available for this class. Wait for processing to complete."));
+        List<ClassRecord> allClasses = new ArrayList<>();
+        if (record.getSubjectId() != null) {
+            allClasses = classRecordRepository.findByUserIdAndSubjectId(userId, record.getSubjectId())
+                    .stream()
+                    .filter(c -> "ANALYZED".equals(c.getStatus()) || "DONE".equals(c.getStatus()))
+                    .sorted((a, b) -> {
+                        if (a.getCreatedAt() == null && b.getCreatedAt() == null) return 0;
+                        if (a.getCreatedAt() == null) return 1;
+                        if (b.getCreatedAt() == null) return -1;
+                        return a.getCreatedAt().compareTo(b.getCreatedAt());
+                    })
+                    .toList();
+        } else {
+            allClasses.add(record);
+        }
+
+        // Filter out classes that come strictly after the current class (don't use future classes for context)
+        List<ClassRecord> relevantClasses = new ArrayList<>();
+        for (ClassRecord c : allClasses) {
+            relevantClasses.add(c);
+            if (c.getId().equals(classId)) {
+                break;
+            }
+        }
+        
+        // If current class isn't found in the list (e.g., status is PROCESSING), just use current
+        if (relevantClasses.stream().noneMatch(c -> c.getId().equals(classId))) {
+            relevantClasses.clear();
+            relevantClasses.add(record);
+        }
+
+        List<String> classIds = relevantClasses.stream().map(ClassRecord::getId).toList();
+        List<Transcript> transcripts = transcriptRepository.findByClassIdIn(classIds);
+        
+        if (transcripts.isEmpty()) {
+            throw new RuntimeException("Transcript not available for this class. Wait for processing to complete.");
+        }
 
         if (apiKey == null || apiKey.isBlank()) {
             throw new RuntimeException("Gemini API key not configured. Set GEMINI_API_KEY env var.");
         }
 
-        String fullText = transcript.getFullText();
-        if (fullText == null || fullText.isBlank()) {
-            throw new RuntimeException("Transcript is empty");
+        // Combine segments from all transcripts
+        List<ClassSegment> allSegments = new ArrayList<>();
+        StringBuilder combinedFullText = new StringBuilder();
+
+        for (ClassRecord c : relevantClasses) {
+            Transcript t = transcripts.stream().filter(tr -> tr.getClassId().equals(c.getId())).findFirst().orElse(null);
+            if (t != null) {
+                combinedFullText.append(t.getFullText()).append("\n");
+                if (t.getSegments() != null) {
+                    for (Transcript.Segment seg : t.getSegments()) {
+                        allSegments.add(new ClassSegment(c.getClassName(), seg));
+                    }
+                }
+            }
         }
 
-        // Build context: select most relevant segments
-        String context = buildContext(fullText, transcript.getSegments(), question);
+        String fullText = combinedFullText.toString();
+        if (fullText.isBlank()) {
+            throw new RuntimeException("Transcripts are empty");
+        }
+
+        // Build context: select most relevant segments across all classes
+        String context = buildContext(fullText, allSegments, question);
 
         // Ask Gemini
         String prompt = buildChatPrompt(context, question);
@@ -88,15 +140,26 @@ public class ChatService {
                 .build();
     }
 
-    private String buildContext(String fullText, List<Transcript.Segment> segments, String question) {
-        // If transcript is short enough, use it all
+    private static class ClassSegment {
+        String className;
+        Transcript.Segment segment;
+
+        public ClassSegment(String className, Transcript.Segment segment) {
+            this.className = className;
+            this.segment = segment;
+        }
+    }
+
+    private String buildContext(String fullText, List<ClassSegment> segments, String question) {
+        // If total combined text is short enough, use it all
         if (fullText.length() <= MAX_CONTEXT_CHARS) {
             if (segments != null && !segments.isEmpty()) {
                 return segments.stream()
-                        .map(s -> String.format("[%s → %s] %s",
-                                formatSeconds(s.getStart()),
-                                formatSeconds(s.getEnd()),
-                                s.getText()))
+                        .map(s -> String.format("[%s | %s → %s] %s",
+                                s.className != null ? s.className : "Current Class",
+                                formatSeconds(s.segment.getStart()),
+                                formatSeconds(s.segment.getEnd()),
+                                s.segment.getText()))
                         .collect(Collectors.joining("\n"));
             }
             return fullText;
@@ -110,25 +173,26 @@ public class ChatService {
 
         String[] keywords = extractKeywords(question);
 
-        List<Transcript.Segment> ranked = segments.stream()
-                .sorted(Comparator.comparingInt((Transcript.Segment s) -> {
-                    String lower = s.getText().toLowerCase();
+        List<ClassSegment> ranked = segments.stream()
+                .sorted(Comparator.comparingInt((ClassSegment s) -> {
+                    String lower = s.segment.getText().toLowerCase();
                     int score = 0;
                     for (String kw : keywords) {
                         if (lower.contains(kw)) score += 10;
                     }
                     // Boost beginning and end of class
-                    if (s.getStart() < 120) score += 2;
+                    if (s.segment.getStart() < 120) score += 2;
                     return -score;
                 }))
                 .collect(Collectors.toList());
 
         StringBuilder context = new StringBuilder();
-        for (Transcript.Segment seg : ranked) {
-            String entry = String.format("[%s → %s] %s",
-                    formatSeconds(seg.getStart()),
-                    formatSeconds(seg.getEnd()),
-                    seg.getText());
+        for (ClassSegment seg : ranked) {
+            String entry = String.format("[%s | %s → %s] %s",
+                    seg.className != null ? seg.className : "Current Class",
+                    formatSeconds(seg.segment.getStart()),
+                    formatSeconds(seg.segment.getEnd()),
+                    seg.segment.getText());
             if (context.length() + entry.length() + 1 > MAX_CONTEXT_CHARS) break;
             context.append(entry).append("\n");
         }
@@ -156,11 +220,14 @@ public class ChatService {
     }
 
     private String buildChatPrompt(String context, String question) {
-        return "You are a helpful academic assistant. Answer the student's question about this class using ONLY the transcript provided below. " +
-                "If the transcript doesn't contain enough information to answer, say so honestly.\n\n" +
-                "When referencing specific moments, include timestamps in [MM:SS] or [HH:MM:SS] format.\n" +
-                "Keep answers concise but complete. Use bullet points for lists.\n\n" +
-                "CLASS TRANSCRIPT:\n" + context + "\n\n" +
+        return "You are a helpful academic assistant. Answer the student's question using ONLY the provided class transcripts below. " +
+                "The transcripts may contain content from multiple classes in the same subject.\n\n" +
+                "Rules:\n" +
+                "1. If the information exists in neither current nor previous classes, reply EXACTLY with: 'This information was not found in the available class content.'\n" +
+                "2. When referencing specific moments, clearly cite the class name and timestamps in [Class Name | MM:SS] format.\n" +
+                "3. Keep answers concise but complete. Use bullet points for lists if necessary.\n" +
+                "4. Do NOT invent information or answer from external knowledge.\n\n" +
+                "CLASS TRANSCRIPTS:\n" + context + "\n\n" +
                 "STUDENT QUESTION: " + question + "\n\n" +
                 "ANSWER:";
     }

@@ -1,4 +1,5 @@
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -6,15 +7,35 @@ from pydantic import BaseModel, Field
 
 from faster_whisper import WhisperModel
 
-app = FastAPI(title="ClassBridge Transcription Service")
-
 model_size = os.getenv("WHISPER_MODEL", "base")
 UPLOAD_DIR = os.getenv("AUDIO_DIR", os.path.expanduser("~/classbridge/uploads/audio"))
 
-try:
-    model = WhisperModel(model_size, device="cpu", compute_type="int8")
-except Exception as e:
-    raise RuntimeError(f"Failed to load whisper model '{model_size}': {e}")
+# Global model reference — populated during startup
+_whisper_model: WhisperModel | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load Whisper model on startup; release on shutdown."""
+    global _whisper_model
+    print(f"[ClassBridge] Loading Whisper model '{model_size}'...")
+    try:
+        _whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        print(f"[ClassBridge] Whisper model '{model_size}' loaded successfully.")
+    except Exception as e:
+        # Log clearly so the user sees why startup failed
+        print(f"[ClassBridge] ERROR: Failed to load Whisper model '{model_size}': {e}")
+        raise RuntimeError(
+            f"Could not load Whisper model '{model_size}'. "
+            f"Ensure faster-whisper is installed and the model name is valid.\n"
+            f"Original error: {e}"
+        ) from e
+    yield
+    # Cleanup on shutdown (model has no explicit close, but signal we're done)
+    _whisper_model = None
+    print("[ClassBridge] Whisper model unloaded.")
+
+app = FastAPI(title="ClassBridge Transcription Service", lifespan=lifespan)
 
 
 class TranscribeRequest(BaseModel):
@@ -56,10 +77,13 @@ def validate_audio_path(audio_path: str) -> Path:
 
 @app.post("/transcribe", response_model=TranscribeResponse)
 async def transcribe(request: TranscribeRequest):
+    if _whisper_model is None:
+        raise HTTPException(status_code=503, detail="Whisper model not loaded. Service is starting up.")
+
     resolved_path = validate_audio_path(request.audio_path)
 
     try:
-        segments_iter, info = model.transcribe(
+        segments_iter, info = _whisper_model.transcribe(
             str(resolved_path),
             beam_size=5,
             language="en",
@@ -92,4 +116,4 @@ async def transcribe(request: TranscribeRequest):
 
 @app.get("/health")
 def health():
-    return {"status": "UP"}
+    return {"status": "UP", "model": model_size, "model_loaded": _whisper_model is not None}

@@ -54,8 +54,8 @@ public class SubjectService {
         List<Subject> subjects = subjectRepository.findByUserId(userId);
         return subjects.stream()
                 .map(s -> {
-                    int count = classRecordRepository.findBySubjectId(s.getId()).size();
-                    return toResponse(s, count);
+                    long count = classRecordRepository.countBySubjectId(s.getId());
+                    return toResponse(s, (int) count);
                 })
                 .toList();
     }

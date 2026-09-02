@@ -255,7 +255,7 @@ public class ClassService {
         classRecordRepository.delete(record);
     }
 
-    private ClassResponse toResponse(ClassRecord record) {
+    public ClassResponse toResponse(ClassRecord record) {
         return ClassResponse.builder()
                 .id(record.getId())
                 .subjectId(record.getSubjectId())
