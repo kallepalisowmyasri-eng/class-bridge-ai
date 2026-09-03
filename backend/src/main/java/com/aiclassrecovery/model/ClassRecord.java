@@ -61,6 +61,15 @@ public class ClassRecord {
     /** Reference to Transcript document */
     private String transcriptId;
 
+    /** Indicates if the recording has a video stream */
+    private boolean hasVideo;
+
+    /** List of paths to extracted key slide frames */
+    private List<String> slidePaths;
+
+    /** AI-generated textual summary of what was on the slides */
+    private String visualSummary;
+
     /** AI-generated: what was covered in this class */
     private String whatYouMissed;
 

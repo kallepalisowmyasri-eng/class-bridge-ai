@@ -1,5 +1,9 @@
 package com.aiclassrecovery.service;
 
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -38,7 +42,9 @@ public class GeminiService {
             TranscriptRepository transcriptRepository,
             ClassRecordRepository classRecordRepository,
             ObjectMapper objectMapper) {
-        this.webClient = WebClient.builder().build();
+        this.webClient = WebClient.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+                .build();
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.transcriptRepository = transcriptRepository;
@@ -73,6 +79,20 @@ public class GeminiService {
             throw new RuntimeException("Transcript is empty");
         }
 
+        // --- Visual Analysis Pass ---
+        String visualContext = "";
+        if (record.getSlidePaths() != null && !record.getSlidePaths().isEmpty()) {
+            try {
+                log.info("Analyzing {} slides for class {}", record.getSlidePaths().size(), classId);
+                String visualSummary = analyzeVisuals(record.getSlidePaths());
+                record.setVisualSummary(visualSummary);
+                visualContext = "VISUAL SLIDES CONTENT (Chronological summary of visuals):\n" + visualSummary + "\n\n";
+            } catch (Exception e) {
+                log.error("Visual analysis failed for class {}, proceeding with text only.", classId, e);
+                visualContext = "VISUAL SLIDES CONTENT: Failed to analyze slides.\n\n";
+            }
+        }
+
         List<String> chunks = splitTranscript(fullText);
         StringBuilder combinedAnalysis = new StringBuilder();
 
@@ -81,14 +101,17 @@ public class GeminiService {
             log.info("Analyzing chunk {}/{} for class {}", i + 1, chunks.size(), classId);
 
             String prompt = buildPrompt(chunk, chunks.size() > 1 ? (i + 1) : null, chunks.size());
-            String response = callGemini(prompt);
+            if (i == 0) {
+                prompt = visualContext + prompt;
+            }
+            String response = callGemini(prompt, null);
             combinedAnalysis.append(response).append("\n\n---\n\n");
         }
 
         String finalAnalysis;
         if (chunks.size() > 1) {
             String mergePrompt = buildMergePrompt(combinedAnalysis.toString());
-            finalAnalysis = callGemini(mergePrompt);
+            finalAnalysis = callGemini(mergePrompt, null);
         } else {
             finalAnalysis = combinedAnalysis.toString().trim();
         }
@@ -163,10 +186,56 @@ public class GeminiService {
     private static final int GEMINI_MAX_RETRIES = 3;
     private static final long GEMINI_RETRY_BASE_MS = 2000;
 
-    private String callGemini(String prompt) {
+    public String analyzeVisuals(List<String> slidePaths) {
+        if (slidePaths == null || slidePaths.isEmpty()) {
+            return "No readable slides found.";
+        }
+
+        // Cap to at most 15 frames for Gemini vision to ensure fast response & reasonable payload size
+        List<String> selectedPaths = new ArrayList<>();
+        int maxImages = Math.min(slidePaths.size(), 15);
+        double step = (double) slidePaths.size() / maxImages;
+        for (int i = 0; i < maxImages; i++) {
+            selectedPaths.add(slidePaths.get((int) (i * step)));
+        }
+
+        List<String> base64Images = new ArrayList<>();
+        for (String path : selectedPaths) {
+            try {
+                byte[] bytes = Files.readAllBytes(Paths.get(path));
+                base64Images.add(Base64.getEncoder().encodeToString(bytes));
+            } catch (Exception e) {
+                log.warn("Failed to read slide frame at path: {}", path, e);
+            }
+        }
+        
+        if (base64Images.isEmpty()) {
+            return "No readable slides found.";
+        }
+
+        String prompt = "You are an expert academic assistant. These are sequential keyframes (slides/board) extracted from a class video. "
+                + "Please provide a detailed chronological summary of the visual content. Extract important text, formulas, code snippets, "
+                + "and describe key diagrams. Do not include introductory filler, just the visual summary.";
+        
+        return callGemini(prompt, base64Images);
+    }
+
+    private String callGemini(String prompt, List<String> base64Images) {
+        List<Map<String, Object>> partsList = new ArrayList<>();
+        partsList.add(Map.of("text", prompt));
+        
+        if (base64Images != null) {
+            for (String base64 : base64Images) {
+                partsList.add(Map.of("inlineData", Map.of(
+                        "mimeType", "image/jpeg",
+                        "data", base64
+                )));
+            }
+        }
+
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(Map.of(
-                        "parts", List.of(Map.of("text", prompt))
+                        "parts", partsList
                 )),
                 "generationConfig", Map.of(
                         "temperature", 0.3,

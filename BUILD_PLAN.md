@@ -361,9 +361,14 @@ frontend/
 - `POST /api/classes/{id}/progress/quiz` — submit quiz results
 - Frontend: progress ring on overview, concept status buttons on Must Learn, auto-submit quiz results
 
-## Phase 13 — Visual Understanding
+## Phase 13 — Visual Understanding ✅
 
-- Extract frames with FFmpeg, slide detection, visual analysis
+- Detect video stream presence via `ffprobe`
+- Keyframe & slide extraction via FFmpeg scene detection with automatic periodic fallbacks
+- Multimodal visual content analysis via Gemini 2.0 Flash (`analyzeVisuals`)
+- Secure authenticated slide delivery: `GET /api/classes/{id}/slides/{slideName}` with path traversal safeguards
+- Frontend: Slides tab with responsive keyframe grid, authenticated blob loading, click-to-enlarge lightbox modal, and download button
+- Resilient non-fatal extraction pipeline (video extraction failures do not crash audio/transcript processing)
 
 ## Phase 14 — Future Live Integration
 

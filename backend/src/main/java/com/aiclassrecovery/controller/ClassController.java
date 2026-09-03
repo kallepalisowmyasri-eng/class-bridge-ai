@@ -113,6 +113,18 @@ public class ClassController {
                 .body(resource);
     }
 
+    @GetMapping("/{id}/slides/{slideName}")
+    public ResponseEntity<Resource> streamSlide(Authentication auth,
+                                                @PathVariable String id,
+                                                @PathVariable String slideName) {
+        String userId = auth.getName();
+        Resource resource = classService.loadSlide(userId, id, slideName);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + slideName + "\"")
+                .body(resource);
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> delete(Authentication auth,
                                         @PathVariable String id) {

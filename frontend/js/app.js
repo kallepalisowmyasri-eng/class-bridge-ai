@@ -1610,6 +1610,7 @@ function initTabs() {
         'watch': loadWatch,
         'chat': loadChat,
         'prev-classes': loadPreviousClasses,
+        'slides': loadSlides,
         'notes': loadNotes
       };
       if (loaders[tab] && panel && !panel.dataset.loaded) {
@@ -1618,6 +1619,139 @@ function initTabs() {
       }
     });
   });
+}
+
+/* ── Slides Tab ──────────────────────────────────────────────────────────── */
+async function loadSlideBlob(classId, filename) {
+  const res = await fetch(`${API}/classes/${classId}/slides/${encodeURIComponent(filename)}`, {
+    headers: authHeaders()
+  });
+  if (!res.ok) throw new Error('Could not load slide');
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+function showSlideLightbox(blobUrl, title) {
+  const modal = document.getElementById('slide-lightbox-modal');
+  const img = document.getElementById('lightbox-img');
+  const titleEl = document.getElementById('lightbox-title');
+  const dlBtn = document.getElementById('lightbox-download-btn');
+  if (!modal || !img) return;
+
+  img.src = blobUrl;
+  if (titleEl) titleEl.textContent = title || 'Slide Preview';
+  if (dlBtn) {
+    dlBtn.onclick = () => {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = (title ? title.replace(/\s+/g, '_') : 'slide') + '.jpg';
+      a.click();
+    };
+  }
+  modal.style.display = 'flex';
+}
+
+function closeSlideLightbox() {
+  const modal = document.getElementById('slide-lightbox-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function downloadSlide(blobUrl, filename) {
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename || 'slide.jpg';
+  a.click();
+}
+
+async function loadSlides(classId) {
+  const el = document.getElementById('tab-slides');
+  if (!el) return;
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const cls = await apiFetch(`/classes/${classId}`);
+    if (!cls.slidePaths || cls.slidePaths.length === 0) {
+      el.innerHTML = emptyState('No Slides', 'No slides or video keyframes were detected in this class recording.');
+      return;
+    }
+
+    // Revoke any previous slide blob URLs to prevent memory leaks
+    if (window._slideBlobUrls) {
+      window._slideBlobUrls.forEach(url => URL.revokeObjectURL(url));
+    }
+    window._slideBlobUrls = [];
+
+    let html = '';
+    if (cls.visualSummary) {
+      html += `
+        <div class="panel" style="margin-bottom:24px;">
+          <div class="panel-title">🖼️ AI Visual Summary of Slides</div>
+          <p class="panel-text" style="white-space:pre-line">${esc(cls.visualSummary)}</p>
+        </div>
+      `;
+    }
+
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="margin:0; font-size:16px; font-weight:700;">Extracted Slides & Keyframes (${cls.slidePaths.length})</h3>
+        <span style="font-size:12px; color:var(--text-muted);">Click any slide to view full size</span>
+      </div>
+      <div class="slides-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:16px;">
+    `;
+
+    cls.slidePaths.forEach((path, index) => {
+      const filename = path.substring(path.lastIndexOf('/') + 1).substring(path.lastIndexOf('\\') + 1);
+      html += `
+        <div class="slide-card" id="slide-card-${index}" style="border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; background:var(--bg-card); cursor:pointer; transition:transform 0.15s ease, box-shadow 0.15s ease;">
+          <div class="slide-img-wrapper" style="position:relative; width:100%; aspect-ratio:16/9; background:var(--bg-secondary); display:flex; align-items:center; justify-content:center; overflow:hidden;">
+            <div class="spinner spinner-sm" id="slide-spinner-${index}"></div>
+            <img id="slide-img-${index}" style="width:100%; height:100%; object-fit:contain; display:none;" alt="Slide ${index + 1}" />
+          </div>
+          <div style="padding:10px 14px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-light); font-size:12px;">
+            <span style="font-weight:600; color:var(--text-secondary);">Slide ${index + 1}</span>
+            <button class="btn btn-ghost btn-sm" id="slide-dl-btn-${index}" style="padding:2px 8px; font-size:11px;">⬇ Save</button>
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+
+    el.innerHTML = html;
+
+    // Load each slide image securely with JWT authentication
+    cls.slidePaths.forEach((path, index) => {
+      const filename = path.substring(path.lastIndexOf('/') + 1).substring(path.lastIndexOf('\\') + 1);
+      loadSlideBlob(classId, filename).then(blobUrl => {
+        window._slideBlobUrls.push(blobUrl);
+        const spinner = document.getElementById(`slide-spinner-${index}`);
+        const img = document.getElementById(`slide-img-${index}`);
+        const card = document.getElementById(`slide-card-${index}`);
+        const dlBtn = document.getElementById(`slide-dl-btn-${index}`);
+
+        if (spinner) spinner.style.display = 'none';
+        if (img) {
+          img.src = blobUrl;
+          img.style.display = 'block';
+        }
+        if (card) {
+          card.onclick = () => showSlideLightbox(blobUrl, `Slide ${index + 1}`);
+        }
+        if (dlBtn) {
+          dlBtn.onclick = (e) => {
+            e.stopPropagation();
+            downloadSlide(blobUrl, `Slide_${index + 1}.jpg`);
+          };
+        }
+      }).catch(err => {
+        const spinner = document.getElementById(`slide-spinner-${index}`);
+        if (spinner) {
+          spinner.parentElement.innerHTML = '<span style="color:var(--text-muted); font-size:12px;">Failed to load image</span>';
+        }
+      });
+    });
+
+  } catch (err) {
+    el.innerHTML = errorState(err.message);
+  }
 }
 
 /* ── Notes Tab ───────────────────────────────────────────────────────────── */

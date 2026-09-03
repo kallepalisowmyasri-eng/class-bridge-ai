@@ -36,6 +36,11 @@ public class ClassResponse {
 
     private int durationSeconds;
     private String transcriptId;
+    
+    private boolean hasVideo;
+    private List<String> slidePaths;
+    private String visualSummary;
+    
     private String status;
     private String failureReason;
     private int retryCount;

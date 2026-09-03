@@ -138,6 +138,7 @@
       <button class="tab-btn" data-tab="announcements">📢 Notices</button>
       <button class="tab-btn" data-tab="revision">✅ Revision</button>
       <button class="tab-btn" data-tab="resources">📁 Resources</button>
+      <button class="tab-btn" data-tab="slides">🖼️ Slides</button>
       <button class="tab-btn" data-tab="notes">📓 My Notes</button>
     </nav>
 
@@ -159,7 +160,20 @@
       <div class="tab-panel" id="tab-announcements"></div>
       <div class="tab-panel" id="tab-revision"></div>
       <div class="tab-panel" id="tab-resources"></div>
+      <div class="tab-panel" id="tab-slides"></div>
       <div class="tab-panel" id="tab-notes"></div>
+    </div>
+  <!-- Slide Preview Lightbox Modal -->
+  <div class="modal-backdrop" id="slide-lightbox-modal" onclick="closeSlideLightbox()" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:9999; align-items:center; justify-content:center; backdrop-filter:blur(4px);">
+    <div style="position:relative; max-width:90vw; max-height:90vh; display:flex; flex-direction:column; align-items:center;" onclick="event.stopPropagation()">
+      <div style="width:100%; display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; color:#fff;">
+        <span id="lightbox-title" style="font-size:16px; font-weight:600;">Slide Preview</span>
+        <div style="display:flex; gap:10px;">
+          <button id="lightbox-download-btn" class="btn btn-secondary btn-sm" style="background:rgba(255,255,255,0.2); color:#fff; border:none; cursor:pointer;">⬇ Download</button>
+          <button onclick="closeSlideLightbox()" class="btn btn-ghost btn-sm" style="color:#fff; font-size:18px; line-height:1; cursor:pointer;">✕</button>
+        </div>
+      </div>
+      <img id="lightbox-img" style="max-width:100%; max-height:80vh; object-fit:contain; border-radius:8px; box-shadow:0 8px 32px rgba(0,0,0,0.6);" alt="Enlarged Slide" />
     </div>
   </div>
 

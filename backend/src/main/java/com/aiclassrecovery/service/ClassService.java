@@ -170,12 +170,28 @@ public class ClassService {
             record.setDurationSeconds(duration);
             classRecordRepository.save(record);
 
-            // Step 2: Extract audio to WAV
+            // Step 2: Extract audio and frames (visuals are best-effort and non-fatal)
+            try {
+                boolean hasVideo = mediaProcessingService.hasVideoStream(recordingPath);
+                record.setHasVideo(hasVideo);
+                if (hasVideo) {
+                    log.info("Video stream detected for class {}. Extracting keyframes...", classId);
+                    try {
+                        List<String> frames = mediaProcessingService.extractFrames(recordingPath, classId);
+                        record.setSlidePaths(frames);
+                    } catch (Exception e) {
+                        log.warn("Frame extraction failed for class {}, proceeding with audio only: {}", classId, e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("Failed to probe video stream for class {}: {}", classId, e.getMessage());
+            }
+
             String audioPath = mediaProcessingService.extractAudio(recordingPath, classId);
             record.setAudioPath(audioPath);
             record.setStatus("AUDIO_READY");
             classRecordRepository.save(record);
-            log.info("Audio extraction complete for class {}", classId);
+            log.info("Media extraction complete for class {}", classId);
 
             // Step 3: Transcribe
             Transcript transcript = transcriptionService.transcribe(classId, audioPath);
@@ -323,6 +339,28 @@ public class ClassService {
         throw new RuntimeException("No audio or recording found for this class");
     }
 
+    public Resource loadSlide(String userId, String classId, String slideName) {
+        ClassRecord record = classRecordRepository.findById(classId)
+                .orElseThrow(() -> new RuntimeException("Class not found"));
+
+        if (!userId.equals(record.getUserId())) {
+            throw new AccessDeniedException("Access denied");
+        }
+
+        if (slideName == null || slideName.contains("..") || slideName.contains("/") || slideName.contains("\\")) {
+            throw new IllegalArgumentException("Invalid slide name");
+        }
+
+        if (record.getSlidePaths() != null) {
+            for (String path : record.getSlidePaths()) {
+                if (path.endsWith(slideName) || path.endsWith("/" + slideName) || path.endsWith("\\" + slideName)) {
+                    return fileService.loadRecording(path);
+                }
+            }
+        }
+        throw new RuntimeException("Slide not found");
+    }
+
     public String getOriginalFilename(String userId, String classId) {
         ClassRecord record = classRecordRepository.findById(classId)
                 .orElseThrow(() -> new RuntimeException("Class not found"));
@@ -344,6 +382,7 @@ public class ClassService {
 
         fileService.deleteFile(record.getRecordingPath());
         mediaProcessingService.deleteAudio(record.getAudioPath());
+        mediaProcessingService.deleteFrames(classId);
         transcriptionService.deleteByClassId(classId);
         studentProgressRepository.deleteByClassId(classId);
         noteRepository.deleteByClassId(classId);
@@ -363,6 +402,9 @@ public class ClassService {
                 .audioPath(record.getAudioPath())
                 .durationSeconds(record.getDurationSeconds())
                 .transcriptId(record.getTranscriptId())
+                .hasVideo(record.isHasVideo())
+                .slidePaths(record.getSlidePaths())
+                .visualSummary(record.getVisualSummary())
                 .status(record.getStatus())
                 .failureReason(record.getFailureReason())
                 .retryCount(record.getRetryCount())

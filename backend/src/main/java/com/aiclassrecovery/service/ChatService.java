@@ -44,7 +44,9 @@ public class ChatService {
             TranscriptRepository transcriptRepository,
             ClassRecordRepository classRecordRepository,
             ObjectMapper objectMapper) {
-        this.webClient = WebClient.builder().build();
+        this.webClient = WebClient.builder()
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))
+                .build();
         this.apiUrl = apiUrl;
         this.apiKey = apiKey;
         this.transcriptRepository = transcriptRepository;
