@@ -204,13 +204,26 @@ async function initDashboard() {
     });
   });
 
-  // Search input
+  // Search input + clear button
   let searchTimeout;
   const searchInput = document.getElementById('class-search');
+  const searchClearBtn = document.getElementById('search-clear-btn');
   if (searchInput) {
     searchInput.addEventListener('input', () => {
+      // Show/hide × button
+      if (searchClearBtn) {
+        searchClearBtn.style.display = searchInput.value ? 'flex' : 'none';
+      }
       clearTimeout(searchTimeout);
       searchTimeout = setTimeout(() => runClassSearch(), 250);
+    });
+  }
+  if (searchClearBtn) {
+    searchClearBtn.addEventListener('click', () => {
+      if (searchInput) searchInput.value = '';
+      searchClearBtn.style.display = 'none';
+      runClassSearch();
+      searchInput?.focus();
     });
   }
 
@@ -455,27 +468,40 @@ function renderCategorizedHome(ready, processing, missed) {
 
 function renderClassCardHtml(c) {
   const isReady = c.status === 'ANALYZED' || c.status === 'DONE';
+  const isFailed = c.status === 'FAILED';
   const isProcessing = ['PROCESSING', 'AUDIO_READY', 'TRANSCRIBED'].includes(c.status);
-  const statusClass = isReady ? 'ready' : (isProcessing ? 'processing' : 'pending');
-  const statusText = isReady ? '⚡ Recovery Ready' : (isProcessing ? '⚙️ Processing...' : '⏳ Pending');
+  const statusClass = isReady ? 'ready' : (isFailed ? 'failed' : (isProcessing ? 'processing' : 'pending'));
+  const statusText = isReady ? '⚡ Recovery Ready'
+    : (isFailed ? '❌ Failed'
+    : (isProcessing ? '⚙️ Processing...' : '⏳ Pending'));
 
   const topicsPreview = c.topics?.length
     ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px">${c.topics.slice(0, 3).map(t => `<span class="prev-topic-tag">${esc(t)}</span>`).join('')}</div>`
     : '';
 
+  const retryBtn = isFailed
+    ? `<button class="btn btn-ghost btn-sm card-retry-btn" data-id="${esc(c.id)}" title="Retry processing" style="color:var(--primary);padding:2px 8px;font-size:11px">
+        🔄 Retry
+       </button>`
+    : '';
+
   return `
-    <div class="class-card-enhanced" data-id="${esc(c.id)}">
+    <div class="class-card-enhanced ${isFailed ? 'card-failed' : ''}" data-id="${esc(c.id)}">
       <div class="card-top">
         <div class="card-title-group">
           <div class="card-subject">${esc(c.subject || 'General Course')}</div>
           <h4>${esc(c.className)}</h4>
           ${topicsPreview}
+          ${isFailed && c.failureReason ? `<div style="font-size:11px;color:var(--error);margin-top:4px;line-height:1.4">⚠️ ${esc(c.failureReason.length > 80 ? c.failureReason.substring(0,80)+'...' : c.failureReason)}</div>` : ''}
         </div>
         <span class="status-badge status-${c.status}">${formatStatus(c.status)}</span>
       </div>
       <div class="card-bottom">
         <span class="recovery-indicator ${statusClass}">${statusText}</span>
-        <span>${c.durationSeconds ? formatDuration(c.durationSeconds) : (c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '')}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${retryBtn}
+          <span>${c.durationSeconds ? formatDuration(c.durationSeconds) : (c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '')}</span>
+        </div>
       </div>
     </div>
   `;
@@ -494,14 +520,36 @@ function renderClassList(classes, containerId = 'class-list') {
   if (!list) return;
 
   if (!classes.length) {
-    list.innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1">
-        <div class="empty-icon">🎬</div>
-        <h3>No classes found</h3>
-        <p>No lectures match your active search and filters.</p>
-        <button class="btn btn-primary" onclick="clearAllFilters()">Clear Filters</button>
-      </div>
-    `;
+    const searchInput = document.getElementById('class-search');
+    const hasQuery = searchInput && searchInput.value.trim().length > 0;
+    const hasFilter = activeStatusFilter && activeStatusFilter !== 'all';
+    const hasSubject = !!activeSubjectFilter;
+
+    if (hasQuery || hasFilter || hasSubject) {
+      // No results for active search/filter
+      const queryText = hasQuery ? `"${esc(searchInput.value.trim())}"` : '';
+      list.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="empty-icon">🔍</div>
+          <h3>No results found${hasQuery ? ' for ' + queryText : ''}</h3>
+          <p>Try a different search term, or clear your filters.</p>
+          <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+            ${hasQuery ? '<button class="btn btn-secondary" onclick="document.getElementById(\'class-search\').value=\'\';document.getElementById(\'search-clear-btn\').style.display=\'none\';runClassSearch()">Clear Search</button>' : ''}
+            <button class="btn btn-primary" onclick="clearAllFilters()">Clear All Filters</button>
+          </div>
+        </div>
+      `;
+    } else {
+      // Genuinely no classes uploaded yet
+      list.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1">
+          <div class="empty-icon">🎬</div>
+          <h3>No classes yet</h3>
+          <p>Upload your first class recording to start your AI-powered catch-up journey.</p>
+          <button class="btn btn-primary" onclick="showUploadModal()">Upload Recording</button>
+        </div>
+      `;
+    }
     return;
   }
 
@@ -771,7 +819,10 @@ function startStatusPolling(classId) {
           toast('AI Analysis complete! Recovery materials ready.', 'success');
           document.querySelectorAll('.tab-panel').forEach(p => { if (p.id !== 'tab-overview') delete p.dataset.loaded; });
         } else {
-          toast('Processing encountered an error.', 'error');
+          // FAILED — show detailed error + retry button
+          const reason = cls.failureReason || 'An unexpected error occurred during processing.';
+          toast('Processing failed. ' + reason, 'error');
+          showRetryBanner(cls.id, reason, cls.retryCount);
         }
       }
     } catch (_) {}
@@ -1558,12 +1609,164 @@ function initTabs() {
         'quiz': loadQuiz,
         'watch': loadWatch,
         'chat': loadChat,
-        'prev-classes': loadPreviousClasses
+        'prev-classes': loadPreviousClasses,
+        'notes': loadNotes
       };
       if (loaders[tab] && panel && !panel.dataset.loaded) {
         panel.dataset.loaded = '1';
         loaders[tab](classId);
       }
+    });
+  });
+}
+
+/* ── Notes Tab ───────────────────────────────────────────────────────────── */
+async function loadNotes(classId) {
+  const el = document.getElementById('tab-notes');
+  if (!el) return;
+  el.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+  try {
+    const notes = await apiFetch(`/classes/${classId}/notes`);
+    renderNotes(classId, notes);
+  } catch (err) {
+    el.innerHTML = errorState(err.message);
+  }
+}
+
+function renderNotes(classId, notes) {
+  const el = document.getElementById('tab-notes');
+  if (!el) return;
+
+  const notesHtml = notes.length
+    ? notes.map(n => `
+      <div class="note-card" data-note-id="${esc(n.id)}">
+        <div class="note-content" id="note-content-${esc(n.id)}">${esc(n.content)}</div>
+        <textarea class="note-edit-area" id="note-edit-${esc(n.id)}" style="display:none" rows="4">${esc(n.content)}</textarea>
+        <div class="note-footer">
+          <span class="note-time">${n.updatedAt ? new Date(n.updatedAt).toLocaleString(undefined, {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : ''}</span>
+          <div class="note-actions">
+            <button class="btn btn-ghost btn-sm note-edit-btn" data-id="${esc(n.id)}" title="Edit note">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit
+            </button>
+            <button class="btn btn-ghost btn-sm note-save-btn" data-id="${esc(n.id)}" style="display:none" title="Save changes">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+              Save
+            </button>
+            <button class="btn btn-ghost btn-sm note-cancel-btn" data-id="${esc(n.id)}" style="display:none">Cancel</button>
+            <button class="btn btn-ghost btn-sm note-delete-btn" data-id="${esc(n.id)}" title="Delete note" style="color:var(--error)">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>`).join('')
+    : '<div class="empty-state" style="padding:32px 0"><div class="empty-icon">📓</div><h3>No notes yet</h3><p>Write your first note for this class below.</p></div>';
+
+  el.innerHTML = `
+    <div class="notes-container">
+      <div class="notes-header">
+        <div class="notes-title">📓 My Notes <span class="notes-count">${notes.length} note${notes.length !== 1 ? 's' : ''}</span></div>
+      </div>
+
+      <div class="note-compose">
+        <textarea class="note-textarea" id="new-note-text" placeholder="Write a note for this class... (e.g. key concepts, doubts, action items)" rows="4"></textarea>
+        <div class="note-compose-footer">
+          <span class="note-char-count" id="note-char-count">0 / 5000</span>
+          <button class="btn btn-primary" id="btn-save-note">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Note
+          </button>
+        </div>
+      </div>
+
+      <div class="notes-list" id="notes-list">${notesHtml}</div>
+    </div>
+  `;
+
+  // Character counter
+  const textarea = document.getElementById('new-note-text');
+  const charCount = document.getElementById('note-char-count');
+  if (textarea && charCount) {
+    textarea.addEventListener('input', () => {
+      const len = textarea.value.length;
+      charCount.textContent = `${len} / 5000`;
+      charCount.style.color = len > 4800 ? 'var(--error)' : 'var(--text-muted)';
+    });
+  }
+
+  // Save new note
+  document.getElementById('btn-save-note')?.addEventListener('click', async () => {
+    const text = textarea?.value?.trim();
+    if (!text) { toast('Please write something before saving.', 'error'); return; }
+    if (text.length > 5000) { toast('Note is too long (max 5000 chars).', 'error'); return; }
+    const btn = document.getElementById('btn-save-note');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+      await apiFetch(`/classes/${classId}/notes`, { method: 'POST', body: JSON.stringify({ content: text }) });
+      if (textarea) textarea.value = '';
+      if (charCount) charCount.textContent = '0 / 5000';
+      toast('Note saved!', 'success');
+      // Reload notes (reset loaded flag so tab reloads)
+      const panel = document.getElementById('tab-notes');
+      if (panel) delete panel.dataset.loaded;
+      await loadNotes(classId);
+    } catch (err) { toast('Failed to save note: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Note'; btn.innerHTML = `<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save Note`; }
+  });
+
+  // Edit / Save / Cancel / Delete note buttons
+  el.querySelectorAll('.note-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById(`note-content-${id}`).style.display = 'none';
+      const editArea = document.getElementById(`note-edit-${id}`);
+      editArea.style.display = 'block';
+      editArea.focus();
+      btn.style.display = 'none';
+      btn.closest('.note-card').querySelector('.note-save-btn').style.display = 'inline-flex';
+      btn.closest('.note-card').querySelector('.note-cancel-btn').style.display = 'inline-flex';
+    });
+  });
+
+  el.querySelectorAll('.note-cancel-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      document.getElementById(`note-content-${id}`).style.display = 'block';
+      document.getElementById(`note-edit-${id}`).style.display = 'none';
+      btn.style.display = 'none';
+      btn.closest('.note-card').querySelector('.note-save-btn').style.display = 'none';
+      btn.closest('.note-card').querySelector('.note-edit-btn').style.display = 'inline-flex';
+    });
+  });
+
+  el.querySelectorAll('.note-save-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      const newContent = document.getElementById(`note-edit-${id}`).value.trim();
+      if (!newContent) { toast('Note cannot be empty.', 'error'); return; }
+      btn.disabled = true; btn.textContent = 'Saving...';
+      try {
+        await apiFetch(`/classes/${classId}/notes/${id}`, { method: 'PUT', body: JSON.stringify({ content: newContent }) });
+        toast('Note updated!', 'success');
+        const panel = document.getElementById('tab-notes');
+        if (panel) delete panel.dataset.loaded;
+        await loadNotes(classId);
+      } catch (err) { toast('Failed to update: ' + err.message, 'error'); }
+      finally { btn.disabled = false; }
+    });
+  });
+
+  el.querySelectorAll('.note-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this note? This cannot be undone.')) return;
+      const id = btn.dataset.id;
+      try {
+        await apiFetch(`/classes/${classId}/notes/${id}`, { method: 'DELETE' });
+        toast('Note deleted.', 'info');
+        const panel = document.getElementById('tab-notes');
+        if (panel) delete panel.dataset.loaded;
+        await loadNotes(classId);
+      } catch (err) { toast('Failed to delete: ' + err.message, 'error'); }
     });
   });
 }
@@ -1589,3 +1792,50 @@ function emptyState(title, desc) {
 function errorState(msg) {
   return `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Something went wrong</h3><p>${esc(msg)}</p></div>`;
 }
+
+/* ── Retry Logic ────────────────────────────────────────────────────────── */
+
+function showRetryBanner(classId, reason, retryCount) {
+  const container = document.getElementById('tab-area');
+  if (!container) return;
+  const attemptsMsg = retryCount > 0 ? `<p style="font-size:12px;margin-top:6px;opacity:0.8">Attempts so far: ${retryCount}</p>` : '';
+  container.innerHTML = `
+    <div style="background:var(--error-dim); border:1px solid var(--error); border-radius:var(--radius-lg); padding:24px; text-align:center; margin-bottom:24px;">
+      <div style="font-size:32px; margin-bottom:12px">❌</div>
+      <h3 style="color:var(--error); margin-bottom:8px">Processing Failed</h3>
+      <p style="color:var(--text); margin-bottom:16px">${esc(reason)}</p>
+      ${attemptsMsg}
+      <button class="btn btn-primary" onclick="retryClassProcessing('${classId}')" style="margin-top:8px">
+        <span class="icon">🔄</span> Retry Processing
+      </button>
+    </div>
+  `;
+}
+
+async function retryClassProcessing(classId) {
+  try {
+    toast('Restarting processing pipeline...', 'info');
+    const res = await apiFetch(`/classes/${classId}/retry`, { method: 'POST' });
+    toast('Processing restarted successfully', 'success');
+    
+    // If on class page, refresh page to start polling
+    if (window.location.pathname.includes('class.html')) {
+      window.location.reload();
+    } else {
+      // If on dashboard, reload lists
+      loadClasses();
+    }
+  } catch (err) {
+    toast('Failed to retry processing: ' + err.message, 'error');
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const retryBtn = e.target.closest('.card-retry-btn');
+  if (retryBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    const id = retryBtn.dataset.id;
+    if (id) retryClassProcessing(id);
+  }
+});

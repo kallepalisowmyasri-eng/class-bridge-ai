@@ -82,8 +82,14 @@ public class ClassRecord {
     /** AI-generated: quiz questions from class content */
     private List<QuizQuestion> quizQuestions;
 
-    /** Processing status: PENDING | PROCESSING | DONE | FAILED */
+    /** Processing status: PENDING | UPLOADED | PROCESSING | AUDIO_READY | TRANSCRIBED | ANALYZED | FAILED */
     private String status;
+
+    /** Human-readable reason for the last failure (null when not failed) */
+    private String failureReason;
+
+    /** Number of processing attempts made (for retry tracking) */
+    private int retryCount;
 
     @CreatedDate
     private Instant createdAt;

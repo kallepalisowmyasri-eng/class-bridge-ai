@@ -17,6 +17,7 @@ import com.aiclassrecovery.model.ClassRecord;
 import com.aiclassrecovery.model.Subject;
 import com.aiclassrecovery.model.Transcript;
 import com.aiclassrecovery.repository.ClassRecordRepository;
+import com.aiclassrecovery.repository.NoteRepository;
 import com.aiclassrecovery.repository.StudentProgressRepository;
 import com.aiclassrecovery.repository.SubjectRepository;
 
@@ -28,6 +29,7 @@ public class ClassService {
     private final ClassRecordRepository classRecordRepository;
     private final SubjectRepository subjectRepository;
     private final StudentProgressRepository studentProgressRepository;
+    private final NoteRepository noteRepository;
     private final FileService fileService;
     private final MediaProcessingService mediaProcessingService;
     private final TranscriptionService transcriptionService;
@@ -37,6 +39,7 @@ public class ClassService {
     public ClassService(ClassRecordRepository classRecordRepository,
                         SubjectRepository subjectRepository,
                         StudentProgressRepository studentProgressRepository,
+                        NoteRepository noteRepository,
                         FileService fileService,
                         MediaProcessingService mediaProcessingService,
                         TranscriptionService transcriptionService,
@@ -45,6 +48,7 @@ public class ClassService {
         this.classRecordRepository = classRecordRepository;
         this.subjectRepository = subjectRepository;
         this.studentProgressRepository = studentProgressRepository;
+        this.noteRepository = noteRepository;
         this.fileService = fileService;
         this.mediaProcessingService = mediaProcessingService;
         this.transcriptionService = transcriptionService;
@@ -91,13 +95,15 @@ public class ClassService {
         }
         String q = query.trim();
 
-        // Search by class name and subject, deduplicate
-        var byName = classRecordRepository.findByUserIdAndClassNameContainingIgnoreCase(userId, q);
-        var bySubject = classRecordRepository.findByUserIdAndSubjectContainingIgnoreCase(userId, q);
+        // Search by class name, subject, and description — deduplicate by ID
+        var byName        = classRecordRepository.findByUserIdAndClassNameContainingIgnoreCase(userId, q);
+        var bySubject     = classRecordRepository.findByUserIdAndSubjectContainingIgnoreCase(userId, q);
+        var byDescription = classRecordRepository.findByUserIdAndDescriptionContainingIgnoreCase(userId, q);
 
         java.util.LinkedHashMap<String, ClassRecord> merged = new java.util.LinkedHashMap<>();
-        byName.forEach(r -> merged.put(r.getId(), r));
-        bySubject.forEach(r -> merged.put(r.getId(), r));
+        byName.forEach(r        -> merged.put(r.getId(), r));
+        bySubject.forEach(r     -> merged.put(r.getId(), r));
+        byDescription.forEach(r -> merged.put(r.getId(), r));
 
         return merged.values().stream()
                 .sorted((a, b) -> {
@@ -189,11 +195,99 @@ public class ClassService {
 
         } catch (Exception e) {
             log.error("Processing failed for class {}", classId, e);
-            ClassRecord record = classRecordRepository.findById(classId).orElse(null);
-            if (record != null) {
-                record.setStatus("FAILED");
-                classRecordRepository.save(record);
+            ClassRecord failed = classRecordRepository.findById(classId).orElse(null);
+            if (failed != null) {
+                failed.setStatus("FAILED");
+                // Store the root cause message (strip class name prefix for readability)
+                String reason = e.getMessage();
+                if (reason == null && e.getCause() != null) reason = e.getCause().getMessage();
+                if (reason == null) reason = e.getClass().getSimpleName();
+                // Truncate if very long
+                if (reason.length() > 500) reason = reason.substring(0, 497) + "...";
+                failed.setFailureReason(reason);
+                classRecordRepository.save(failed);
             }
+        }
+    }
+
+    /**
+     * Retry processing from the last completed checkpoint.
+     * - If status is TRANSCRIBED → only re-run Gemini analysis
+     * - If status is AUDIO_READY → re-run transcription + Gemini
+     * - Otherwise → restart the entire pipeline
+     */
+    public ClassResponse retryProcessing(String userId, String classId) {
+        ClassRecord record = classRecordRepository.findById(classId)
+                .orElseThrow(() -> new RuntimeException("Class not found"));
+
+        if (!userId.equals(record.getUserId())) {
+            throw new org.springframework.security.access.AccessDeniedException("Access denied");
+        }
+
+        String currentStatus = record.getStatus();
+        // Only retry from FAILED, or non-terminal stuck states
+        if ("ANALYZED".equals(currentStatus) || "DONE".equals(currentStatus)) {
+            throw new RuntimeException("Class is already analyzed. No retry needed.");
+        }
+
+        // Clear failure info and increment retry counter
+        record.setFailureReason(null);
+        record.setRetryCount(record.getRetryCount() + 1);
+        record.setStatus("PROCESSING");
+        classRecordRepository.save(record);
+
+        // Launch async retry from last checkpoint
+        if ("TRANSCRIBED".equals(currentStatus)) {
+            log.info("Retrying Gemini analysis only for class {} (was TRANSCRIBED)", classId);
+            applicationContext.getBean(ClassService.class).retryGeminiAsync(classId);
+        } else if ("AUDIO_READY".equals(currentStatus)) {
+            log.info("Retrying transcription+Gemini for class {} (was AUDIO_READY)", classId);
+            applicationContext.getBean(ClassService.class).retryFromTranscriptionAsync(classId);
+        } else {
+            log.info("Full pipeline retry for class {} (was {})", classId, currentStatus);
+            applicationContext.getBean(ClassService.class).processRecordingAsync(classId, record.getRecordingPath());
+        }
+
+        return toResponse(classRecordRepository.findById(classId).orElse(record));
+    }
+
+    @Async
+    public void retryGeminiAsync(String classId) {
+        try {
+            geminiService.analyze(classId);
+            log.info("Retry Gemini analysis complete for class {}", classId);
+        } catch (Exception e) {
+            log.error("Retry Gemini analysis failed for class {}", classId, e);
+            ClassRecord rec = classRecordRepository.findById(classId).orElse(null);
+            if (rec != null) {
+                rec.setStatus("FAILED");
+                String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+                rec.setFailureReason(reason.length() > 500 ? reason.substring(0, 497) + "..." : reason);
+                classRecordRepository.save(rec);
+            }
+        }
+    }
+
+    @Async
+    public void retryFromTranscriptionAsync(String classId) {
+        ClassRecord record = classRecordRepository.findById(classId).orElse(null);
+        if (record == null) return;
+        try {
+            Transcript transcript = transcriptionService.transcribe(classId, record.getAudioPath());
+            record.setTranscriptId(transcript.getId());
+            record.setStatus("TRANSCRIBED");
+            classRecordRepository.save(record);
+            log.info("Retry transcription complete for class {}", classId);
+
+            geminiService.analyze(classId);
+            log.info("Retry Gemini analysis complete for class {}", classId);
+        } catch (Exception e) {
+            log.error("Retry from transcription failed for class {}", classId, e);
+            ClassRecord failed = classRecordRepository.findById(classId).orElse(record);
+            failed.setStatus("FAILED");
+            String reason = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            failed.setFailureReason(reason.length() > 500 ? reason.substring(0, 497) + "..." : reason);
+            classRecordRepository.save(failed);
         }
     }
 
@@ -252,6 +346,7 @@ public class ClassService {
         mediaProcessingService.deleteAudio(record.getAudioPath());
         transcriptionService.deleteByClassId(classId);
         studentProgressRepository.deleteByClassId(classId);
+        noteRepository.deleteByClassId(classId);
         classRecordRepository.delete(record);
     }
 
@@ -269,6 +364,8 @@ public class ClassService {
                 .durationSeconds(record.getDurationSeconds())
                 .transcriptId(record.getTranscriptId())
                 .status(record.getStatus())
+                .failureReason(record.getFailureReason())
+                .retryCount(record.getRetryCount())
                 .whatYouMissed(record.getWhatYouMissed())
                 .topics(record.getTopics())
                 .mustLearn(record.getMustLearn())

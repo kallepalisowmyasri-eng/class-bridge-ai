@@ -37,6 +37,8 @@ public class ClassResponse {
     private int durationSeconds;
     private String transcriptId;
     private String status;
+    private String failureReason;
+    private int retryCount;
 
     private String whatYouMissed;
     private List<String> topics;

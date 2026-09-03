@@ -120,4 +120,13 @@ public class ClassController {
         classService.delete(userId, id);
         return ResponseEntity.noContent().build();
     }
+
+    /** POST /api/classes/{id}/retry — restart processing from last checkpoint */
+    @PostMapping("/{id}/retry")
+    public ResponseEntity<ClassResponse> retry(Authentication auth,
+                                               @PathVariable String id) {
+        String userId = auth.getName();
+        ClassResponse response = classService.retryProcessing(userId, id);
+        return ResponseEntity.ok(response);
+    }
 }

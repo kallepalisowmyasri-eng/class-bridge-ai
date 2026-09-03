@@ -29,4 +29,7 @@ public interface ClassRecordRepository extends MongoRepository<ClassRecord, Stri
     List<ClassRecord> findByUserIdAndClassNameContainingIgnoreCase(String userId, String className);
 
     List<ClassRecord> findByUserIdAndSubjectContainingIgnoreCase(String userId, String subject);
+
+    /** Search classes by description text for a user */
+    List<ClassRecord> findByUserIdAndDescriptionContainingIgnoreCase(String userId, String description);
 }

@@ -160,6 +160,9 @@ public class GeminiService {
                 "ANALYSIS CHUNKS:\n" + combinedChunks;
     }
 
+    private static final int GEMINI_MAX_RETRIES = 3;
+    private static final long GEMINI_RETRY_BASE_MS = 2000;
+
     private String callGemini(String prompt) {
         Map<String, Object> requestBody = Map.of(
                 "contents", List.of(Map.of(
@@ -171,44 +174,72 @@ public class GeminiService {
                 )
         );
 
-        try {
-            String url = apiUrl + "?key=" + apiKey;
+        String url = apiUrl + "?key=" + apiKey;
+        Exception lastException = null;
 
-            String responseStr = webClient.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .bodyValue(requestBody)
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .block();
+        for (int attempt = 1; attempt <= GEMINI_MAX_RETRIES; attempt++) {
+            try {
+                String responseStr = webClient.post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .bodyValue(requestBody)
+                        .retrieve()
+                        .onStatus(
+                            status -> status.value() == 429 || status.value() >= 500,
+                            clientResponse -> clientResponse.bodyToMono(String.class)
+                                .map(body -> new RuntimeException("Gemini HTTP " + clientResponse.statusCode().value() + ": " + body))
+                        )
+                        .bodyToMono(String.class)
+                        .block();
 
-            if (responseStr == null || responseStr.isBlank()) {
-                throw new RuntimeException("Gemini API returned empty response body");
-            }
-
-            JsonNode root = objectMapper.readTree(responseStr);
-            JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
-
-            if (textNode.isMissingNode() || textNode.isNull()) {
-                // Check for error response
-                JsonNode errorNode = root.path("error");
-                if (!errorNode.isMissingNode()) {
-                    throw new RuntimeException("Gemini API error: " + errorNode.path("message").asText("unknown error"));
+                if (responseStr == null || responseStr.isBlank()) {
+                    throw new RuntimeException("Gemini API returned empty response body");
                 }
-                throw new RuntimeException("Gemini API returned empty response");
+
+                JsonNode root = objectMapper.readTree(responseStr);
+                JsonNode textNode = root.path("candidates").path(0).path("content").path("parts").path(0).path("text");
+
+                if (textNode.isMissingNode() || textNode.isNull()) {
+                    JsonNode errorNode = root.path("error");
+                    if (!errorNode.isMissingNode()) {
+                        String errMsg = errorNode.path("message").asText("unknown error");
+                        int errCode = errorNode.path("code").asInt(0);
+                        // 400 = bad request (permanent), 401/403 = auth (permanent), 429 = rate limit (retryable)
+                        if (errCode == 400 || errCode == 401 || errCode == 403) {
+                            throw new RuntimeException("Gemini API permanent error: " + errMsg);
+                        }
+                        throw new RuntimeException("Gemini API error: " + errMsg);
+                    }
+                    throw new RuntimeException("Gemini API returned empty response");
+                }
+
+                return textNode.asText();
+
+            } catch (RuntimeException e) {
+                lastException = e;
+                boolean isPermanent = e.getMessage() != null && e.getMessage().contains("permanent error");
+                if (isPermanent || attempt == GEMINI_MAX_RETRIES) {
+                    log.error("Gemini call failed (attempt {}/{}): {}", attempt, GEMINI_MAX_RETRIES, e.getMessage());
+                    throw new RuntimeException("Gemini API failed after " + attempt + " attempt(s): " + e.getMessage(), e);
+                }
+                long waitMs = GEMINI_RETRY_BASE_MS * (long) Math.pow(2, attempt - 1);
+                log.warn("Gemini call failed (attempt {}/{}), retrying in {}ms: {}", attempt, GEMINI_MAX_RETRIES, waitMs, e.getMessage());
+                try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+            } catch (WebClientRequestException e) {
+                lastException = e;
+                if (attempt == GEMINI_MAX_RETRIES) {
+                    log.error("Gemini network error (attempt {}/{})", attempt, GEMINI_MAX_RETRIES, e);
+                    throw new RuntimeException("Gemini API unreachable after " + attempt + " attempt(s): " + e.getMessage(), e);
+                }
+                long waitMs = GEMINI_RETRY_BASE_MS * (long) Math.pow(2, attempt - 1);
+                log.warn("Gemini network error (attempt {}/{}), retrying in {}ms", attempt, GEMINI_MAX_RETRIES, waitMs);
+                try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+            } catch (Exception e) {
+                log.error("Failed to parse Gemini response", e);
+                throw new RuntimeException("Failed to parse Gemini response: " + e.getMessage(), e);
             }
-
-            return textNode.asText();
-
-        } catch (WebClientRequestException e) {
-            log.error("Failed to call Gemini API", e);
-            throw new RuntimeException("Gemini API unavailable: " + e.getMessage());
-        } catch (RuntimeException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Failed to parse Gemini response", e);
-            throw new RuntimeException("Failed to parse Gemini response: " + e.getMessage());
         }
+        throw new RuntimeException("Gemini API failed: " + (lastException != null ? lastException.getMessage() : "unknown"));
     }
 
     private GeminiAnalysisResult parseAnalysis(String json) {
