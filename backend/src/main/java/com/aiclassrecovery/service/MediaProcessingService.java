@@ -49,7 +49,9 @@ public class MediaProcessingService {
         }
         if (!input.startsWith(audioDir) &&
             !input.startsWith(uploadDir) &&
-            !input.startsWith(Paths.get(System.getProperty("user.home")).resolve("classbridge").toAbsolutePath().normalize())) {
+            !input.startsWith(Paths.get(System.getProperty("user.home")).resolve("classbridge").toAbsolutePath().normalize()) &&
+            !input.startsWith(Paths.get("").toAbsolutePath().normalize()) &&
+            !input.startsWith(Paths.get("..").toAbsolutePath().normalize())) {
             throw new RuntimeException("Input file not in allowed directory");
         }
 

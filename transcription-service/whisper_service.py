@@ -57,12 +57,16 @@ def validate_audio_path(audio_path: str) -> Path:
     resolved = Path(audio_path).resolve()
     upload_dir = Path(UPLOAD_DIR).resolve()
     home_classbridge = (Path.home() / "classbridge").resolve()
+    project_root = Path(__file__).resolve().parent.parent
 
     norm_resolved = os.path.normcase(str(resolved))
     norm_upload = os.path.normcase(str(upload_dir))
     norm_home = os.path.normcase(str(home_classbridge))
+    norm_project = os.path.normcase(str(project_root))
 
-    if not norm_resolved.startswith(norm_upload) and not norm_resolved.startswith(norm_home):
+    if not (norm_resolved.startswith(norm_upload) or
+            norm_resolved.startswith(norm_home) or
+            norm_resolved.startswith(norm_project)):
         raise HTTPException(status_code=400, detail="Path not within allowed directory")
 
     if not resolved.exists():

@@ -284,6 +284,15 @@ public class GeminiService {
 
                 return textNode.asText();
 
+            } catch (WebClientRequestException e) {
+                lastException = e;
+                if (attempt == GEMINI_MAX_RETRIES) {
+                    log.error("Gemini network error (attempt {}/{})", attempt, GEMINI_MAX_RETRIES, e);
+                    throw new RuntimeException("Gemini API unreachable after " + attempt + " attempt(s): " + e.getMessage(), e);
+                }
+                long waitMs = GEMINI_RETRY_BASE_MS * (long) Math.pow(2, attempt - 1);
+                log.warn("Gemini network error (attempt {}/{}), retrying in {}ms", attempt, GEMINI_MAX_RETRIES, waitMs);
+                try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             } catch (RuntimeException e) {
                 lastException = e;
                 boolean isPermanent = e.getMessage() != null && e.getMessage().contains("permanent error");
@@ -293,15 +302,6 @@ public class GeminiService {
                 }
                 long waitMs = GEMINI_RETRY_BASE_MS * (long) Math.pow(2, attempt - 1);
                 log.warn("Gemini call failed (attempt {}/{}), retrying in {}ms: {}", attempt, GEMINI_MAX_RETRIES, waitMs, e.getMessage());
-                try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-            } catch (WebClientRequestException e) {
-                lastException = e;
-                if (attempt == GEMINI_MAX_RETRIES) {
-                    log.error("Gemini network error (attempt {}/{})", attempt, GEMINI_MAX_RETRIES, e);
-                    throw new RuntimeException("Gemini API unreachable after " + attempt + " attempt(s): " + e.getMessage(), e);
-                }
-                long waitMs = GEMINI_RETRY_BASE_MS * (long) Math.pow(2, attempt - 1);
-                log.warn("Gemini network error (attempt {}/{}), retrying in {}ms", attempt, GEMINI_MAX_RETRIES, waitMs);
                 try { Thread.sleep(waitMs); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
             } catch (Exception e) {
                 log.error("Failed to parse Gemini response", e);
