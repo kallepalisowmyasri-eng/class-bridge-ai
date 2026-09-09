@@ -1,4 +1,4 @@
-﻿# ╔══════════════════════════════════════════════════════════════╗
+# ╔══════════════════════════════════════════════════════════════╗
 # ║         ClassBridge AI — Backend Startup Script              ║
 # ║  Reads .env automatically and starts Spring Boot backend     ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -50,13 +50,26 @@ try {
 try { java -version 2>$null; Write-Host "  ✓ Java found" -ForegroundColor Green } catch { Write-Host "  ✗ Java not found" -ForegroundColor Red; exit 1 }
 try { mvn -version 2>$null; Write-Host "  ✓ Maven found" -ForegroundColor Green } catch { Write-Host "  ✗ Maven not found" -ForegroundColor Red; exit 1 }
 
+# ── Build JVM -D args from .env (ensures all vars reach Spring Boot) ──────────
+$jvmArgs = @()
+Get-Content $EnvFile | ForEach-Object {
+    $line = $_.Trim()
+    if ($line -eq "" -or $line.StartsWith("#")) { return }
+    $parts = $line.Split("=", 2)
+    if ($parts.Count -eq 2) {
+        $key   = $parts[0].Trim()
+        $value = $parts[1].Trim()
+        $jvmArgs += "-D$key=$value"
+    }
+}
+$jvmArgsStr = $jvmArgs -join " "
+
 # ── Start ────────────────────────────────────────────────────────────────────
-$env:SPRING_PROFILES_ACTIVE = "dev"
 $port = if ($env:SERVER_PORT) { $env:SERVER_PORT } else { "8080" }
 Write-Host ""
-Write-Host "  ► Starting backend on port $port (dev profile)..." -ForegroundColor Cyan
+Write-Host "  ► Starting backend on port $port ..." -ForegroundColor Cyan
 Write-Host "  ► Health: http://localhost:$port/api/health" -ForegroundColor Gray
 Write-Host "  Press Ctrl+C to stop" -ForegroundColor DarkGray
 Write-Host ""
 Set-Location $BackendDir
-& mvn spring-boot:run
+& mvn spring-boot:run "-Dspring-boot.run.jvmArguments=$jvmArgsStr"
