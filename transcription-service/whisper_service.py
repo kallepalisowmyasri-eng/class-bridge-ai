@@ -1,8 +1,9 @@
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field
 
 from faster_whisper import WhisperModel
@@ -121,3 +122,70 @@ async def transcribe(request: TranscribeRequest):
 @app.get("/health")
 def health():
     return {"status": "UP", "model": model_size, "model_loaded": _whisper_model is not None}
+
+
+@app.post("/transcribe-chunk", response_model=TranscribeResponse)
+async def transcribe_chunk(audio: UploadFile = File(...)):
+    """
+    Transcribe a raw audio chunk uploaded from the browser MediaRecorder.
+    Accepts any format faster-whisper supports (WebM/Opus, WAV, MP3, etc.).
+    Writes to a secure temp file, transcribes, then deletes it immediately.
+    """
+    if _whisper_model is None:
+        raise HTTPException(status_code=503, detail="Whisper model not loaded. Service is starting up.")
+
+    # Determine suffix from content type or filename
+    content_type = audio.content_type or ""
+    if "webm" in content_type or (audio.filename and audio.filename.endswith(".webm")):
+        suffix = ".webm"
+    elif "ogg" in content_type:
+        suffix = ".ogg"
+    elif "mp4" in content_type or "m4a" in content_type:
+        suffix = ".mp4"
+    else:
+        suffix = ".wav"
+
+    tmp_path = None
+    try:
+        # Write upload to a secure temp file
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            content = await audio.read()
+            if not content:
+                raise HTTPException(status_code=400, detail="Empty audio chunk received")
+            tmp.write(content)
+
+        # Transcribe the temp file
+        segments_iter, _ = _whisper_model.transcribe(
+            tmp_path,
+            beam_size=5,
+            language="en",
+            vad_filter=True,
+        )
+
+        segments = []
+        full_text_parts = []
+        for seg in segments_iter:
+            segments.append(TranscriptSegment(
+                start=round(seg.start, 2),
+                end=round(seg.end, 2),
+                text=seg.text.strip(),
+            ))
+            full_text_parts.append(seg.text.strip())
+
+        return TranscribeResponse(
+            segments=segments,
+            full_text=" ".join(full_text_parts),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chunk transcription failed: {str(e)}")
+    finally:
+        # Always clean up the temp file
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ClassBridge AI — Live Session</title>
+  <meta name="description" content="Record your class live and get real-time AI transcription, topics and key points.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+  <!-- SockJS + STOMP for WebSocket live updates -->
+  <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"></script>
+  <style>
+    /* ── Live Session Page Styles ─────────────────────────────────────── */
+    :root {
+      --live-red: #ef4444;
+      --live-red-glow: rgba(239,68,68,0.25);
+      --ai-purple: #8b5cf6;
+      --ai-purple-soft: rgba(139,92,246,0.12);
+      --transcript-bg: rgba(255,255,255,0.03);
+      --chunk-border: rgba(255,255,255,0.06);
+    }
+
+    .live-page {
+      min-height: 100vh;
+      background: #0a0a0f;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top Bar ──────────────────────────────────────────────────────── */
+    .live-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      height: 64px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+    .live-topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .logo-link {
+      font-weight: 800;
+      font-size: 1.15rem;
+      color: #e2e8f0;
+      text-decoration: none;
+      letter-spacing: -0.02em;
+    }
+    .logo-link span { color: #8b5cf6; }
+    .session-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #94a3b8;
+      padding-left: 1rem;
+      border-left: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* ── Live Indicator ───────────────────────────────────────────────── */
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      background: rgba(239,68,68,0.15);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 20px;
+      padding: 0.3rem 0.8rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #ef4444;
+      letter-spacing: 0.05em;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .live-badge.visible { opacity: 1; }
+    .live-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      animation: pulse-dot 1.5s infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--live-red-glow); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 4px transparent; }
+    }
+
+    /* ── Timer ────────────────────────────────────────────────────────── */
+    .live-timer {
+      font-family: 'DM Sans', monospace;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Status Bar ───────────────────────────────────────────────────── */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: #64748b;
+      transition: color 0.3s;
+    }
+    .status-icon { font-size: 0.9rem; }
+    .status-bar.recording { color: #ef4444; }
+    .status-bar.processing { color: #f59e0b; }
+    .status-bar.ended { color: #10b981; }
+
+    /* ── Main Layout ──────────────────────────────────────────────────── */
+    .live-main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ── Transcript Panel (Left) ──────────────────────────────────────── */
+    .transcript-panel {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid rgba(255,255,255,0.07);
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 1.75rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .panel-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    .chunk-counter {
+      font-size: 0.75rem;
+      color: #475569;
+      font-weight: 500;
+    }
+    .transcript-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      scroll-behavior: smooth;
+    }
+    .transcript-scroll::-webkit-scrollbar { width: 4px; }
+    .transcript-scroll::-webkit-scrollbar-track { background: transparent; }
+    .transcript-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+
+    .transcript-chunk {
+      background: var(--transcript-bg);
+      border: 1px solid var(--chunk-border);
+      border-radius: 12px;
+      padding: 0.9rem 1.1rem;
+      font-size: 0.88rem;
+      line-height: 1.65;
+      color: #cbd5e1;
+      animation: fadeSlideIn 0.4s ease;
+      position: relative;
+    }
+    .transcript-chunk.latest {
+      border-color: rgba(139,92,246,0.3);
+      background: rgba(139,92,246,0.06);
+    }
+    .transcript-chunk .chunk-ts {
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 0.4rem;
+      font-family: 'DM Sans', monospace;
+    }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Processing pulse on latest chunk */
+    .chunk-processing {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      color: #64748b;
+      font-size: 0.82rem;
+    }
+    .processing-dots span {
+      display: inline-block;
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #64748b;
+      animation: blink 1.2s infinite;
+    }
+    .processing-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .processing-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 80%, 100% { opacity: 0.3; }
+      40% { opacity: 1; }
+    }
+
+    /* Empty state */
+    .transcript-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 1rem;
+      color: #334155;
+      text-align: center;
+      padding: 2rem;
+    }
+    .transcript-empty .icon { font-size: 3rem; opacity: 0.4; }
+    .transcript-empty p { font-size: 0.9rem; line-height: 1.6; max-width: 260px; }
+
+    /* ── AI Insights Panel (Right) ────────────────────────────────────── */
+    .insights-panel {
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      background: rgba(255,255,255,0.015);
+    }
+    .insights-panel::-webkit-scrollbar { width: 4px; }
+    .insights-panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+
+    .insight-card {
+      padding: 1.5rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .insight-card-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: #475569;
+      margin-bottom: 1rem;
+    }
+    .insight-icon { font-size: 1rem; }
+    .insight-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .insight-item {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      font-size: 0.82rem;
+      color: #94a3b8;
+      line-height: 1.5;
+      animation: fadeSlideIn 0.35s ease;
+    }
+    .insight-item.topic-item {
+      border-left: 3px solid rgba(139,92,246,0.5);
+      color: #c4b5fd;
+    }
+    .insight-item.keypoint-item {
+      border-left: 3px solid rgba(16,185,129,0.5);
+      color: #6ee7b7;
+    }
+    .insight-placeholder {
+      font-size: 0.8rem;
+      color: #334155;
+      font-style: italic;
+      padding: 0.5rem 0;
+    }
+
+    /* Stats */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+    }
+    .stat-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      padding: 0.9rem;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: #e2e8f0;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .stat-label {
+      font-size: 0.68rem;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.2rem;
+      font-weight: 600;
+    }
+
+    /* ── Mic Visualizer ───────────────────────────────────────────────── */
+    .mic-viz {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 3px;
+      height: 32px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .mic-viz.active { opacity: 1; }
+    .mic-bar {
+      width: 4px;
+      border-radius: 2px;
+      background: linear-gradient(to top, #8b5cf6, #ef4444);
+      min-height: 4px;
+      transition: height 0.1s ease;
+    }
+
+    /* ── Bottom Control Bar ───────────────────────────────────────────── */
+    .control-bar {
+      padding: 1.25rem 2rem;
+      background: rgba(255,255,255,0.02);
+      border-top: 1px solid rgba(255,255,255,0.07);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+    }
+    .control-left {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    /* Start/Stop button */
+    .btn-record {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      padding: 0.75rem 1.75rem;
+      border-radius: 40px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      letter-spacing: -0.01em;
+    }
+    .btn-record.start {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: #fff;
+      box-shadow: 0 0 0 0 var(--live-red-glow);
+    }
+    .btn-record.start:hover {
+      transform: scale(1.04);
+      box-shadow: 0 0 24px var(--live-red-glow);
+    }
+    .btn-record.stop {
+      background: rgba(239,68,68,0.12);
+      color: #ef4444;
+      border: 1.5px solid rgba(239,68,68,0.3);
+      animation: pulse-border 2s infinite;
+    }
+    @keyframes pulse-border {
+      0%, 100% { border-color: rgba(239,68,68,0.3); }
+      50% { border-color: rgba(239,68,68,0.7); }
+    }
+    .btn-record.stop:hover {
+      background: rgba(239,68,68,0.2);
+    }
+    .btn-record:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* Session form */
+    .session-setup {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex: 1;
+    }
+    .setup-select, .setup-input {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 10px;
+      padding: 0.55rem 0.9rem;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .setup-select:focus, .setup-input:focus {
+      border-color: rgba(139,92,246,0.5);
+    }
+    .setup-select option { background: #1e1e2e; }
+    .setup-select { min-width: 160px; }
+    .setup-input { flex: 1; max-width: 280px; }
+    .setup-input::placeholder { color: #475569; }
+
+    /* Done banner */
+    .done-banner {
+      display: none;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1.25rem;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: 12px;
+      font-size: 0.85rem;
+      color: #34d399;
+      font-weight: 600;
+    }
+    .done-banner.visible { display: flex; }
+    .done-banner a {
+      color: #34d399;
+      text-decoration: underline;
+      cursor: pointer;
+    }
+    .done-banner a:hover { color: #6ee7b7; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .live-main { grid-template-columns: 1fr; }
+      .insights-panel { display: none; }
+      .control-bar { flex-direction: column; }
+    }
+  </style>
+</head>
+<body class="live-page">
+
+  <!-- ── Top Bar ───────────────────────────────────────────────────────── -->
+  <header class="live-topbar">
+    <div class="live-topbar-left">
+      <a href="dashboard.html" class="logo-link">🎓 Class<span>Bridge</span> AI</a>
+      <span class="session-title" id="topbar-session-name">New Live Session</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:1.25rem;">
+      <div class="live-badge" id="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="live-timer" id="live-timer">00:00:00</div>
+      <div class="status-bar" id="status-bar">
+        <span class="status-icon">⏸</span>
+        <span id="status-text">Ready to record</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main Content ───────────────────────────────────────────────────── -->
+  <div class="live-main">
+
+    <!-- Left: Transcript Panel -->
+    <section class="transcript-panel">
+      <div class="panel-header">
+        <span class="panel-title">📝 Live Transcript</span>
+        <span class="chunk-counter" id="chunk-counter">0 chunks</span>
+      </div>
+      <div class="transcript-scroll" id="transcript-scroll">
+        <div class="transcript-empty" id="transcript-empty">
+          <div class="icon">🎙️</div>
+          <p>Start recording and your live transcript will appear here, updated every few seconds.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: AI Insights Panel -->
+    <aside class="insights-panel">
+
+      <!-- Stats -->
+      <div class="insight-card">
+        <div class="insight-card-title">
+          <span class="insight-icon">📊</span> Session Stats
+        </div>
+        <div class="stats-grid">
+          <div class="stat-item">
+            <div class="stat-value" id="stat-words">0</div>
+            <div class="stat-label">Words</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-chunks">0</div>
+            <div class="stat-label">Chunks</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-duration">0s</div>
+            <div class="stat-label">Duration</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value" id="stat-topics-count">0</div>
+            <div class="stat-label">Topics</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Topics -->
+      <div class="insight-card">
+        <div class="insight-card-title">
+          <span class="insight-icon">🧠</span> AI-Detected Topics
+        </div>
+        <div class="insight-list" id="topics-list">
+          <div class="insight-placeholder">Topics will appear after a few seconds of speech...</div>
+        </div>
+      </div>
+
+      <!-- Key Points -->
+      <div class="insight-card">
+        <div class="insight-card-title">
+          <span class="insight-icon">💡</span> Key Points
+        </div>
+        <div class="insight-list" id="keypoints-list">
+          <div class="insight-placeholder">Key points will appear as class content builds up...</div>
+        </div>
+      </div>
+
+      <!-- Mic Visualizer -->
+      <div class="insight-card" style="padding:1.25rem 1.5rem;">
+        <div class="insight-card-title" style="margin-bottom:0.75rem;">
+          <span class="insight-icon">🎤</span> Microphone Level
+        </div>
+        <div class="mic-viz" id="mic-viz">
+          <div class="mic-bar" id="b1"></div>
+          <div class="mic-bar" id="b2"></div>
+          <div class="mic-bar" id="b3"></div>
+          <div class="mic-bar" id="b4"></div>
+          <div class="mic-bar" id="b5"></div>
+          <div class="mic-bar" id="b6"></div>
+          <div class="mic-bar" id="b7"></div>
+          <div class="mic-bar" id="b8"></div>
+          <div class="mic-bar" id="b9"></div>
+          <div class="mic-bar" id="b10"></div>
+          <div class="mic-bar" id="b11"></div>
+          <div class="mic-bar" id="b12"></div>
+        </div>
+        <p style="font-size:0.72rem;color:#334155;margin-top:0.6rem;text-align:center;">
+          Audio is processed locally — not sent raw to any cloud
+        </p>
+      </div>
+
+    </aside>
+  </div>
+
+  <!-- ── Control Bar ─────────────────────────────────────────────────────── -->
+  <footer class="control-bar">
+    <div class="control-left">
+      <button class="btn-record start" id="btn-record" onclick="handleRecordToggle()">
+        <span id="btn-icon">🔴</span>
+        <span id="btn-text">Start Session</span>
+      </button>
+      <div class="session-setup" id="session-setup">
+        <select class="setup-select" id="subject-select">
+          <option value="">Select Subject...</option>
+        </select>
+        <input type="text" class="setup-input" id="session-name-input"
+               placeholder="Session name (optional)">
+      </div>
+    </div>
+
+    <!-- Done Banner (shown after session ends and class is ready) -->
+    <div class="done-banner" id="done-banner">
+      ✅ Class saved! <a id="view-class-link" onclick="openClassPage()">View your class →</a>
+      &nbsp;or&nbsp;
+      <a href="dashboard.html">Go to Dashboard</a>
+    </div>
+  </footer>
+
+  <script src="js/app.js"></script>
+  <script>
+  /* ═══════════════════════════════════════════════════════════════════════
+     ClassBridge AI — Live Session JavaScript
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* ── State ──────────────────────────────────────────────────────────── */
+  let isRecording   = false;
+  let mediaRecorder = null;
+  let audioContext  = null;
+  let analyser      = null;
+  let animFrameId   = null;
+  let timerInterval = null;
+  let chunkInterval = null;
+  let sessionId     = null;
+  let resultClassId = null;
+  let stompClient   = null;
+  let startTime     = null;
+  let chunkCount    = 0;
+  let allTranscript = '';
+
+  const CHUNK_INTERVAL_MS = 5000; // send chunk every 5 seconds
+  const API_BASE = (window.CLASSBRIDGE_API_URL || 'http://localhost:8080') + '/api';
+  const WS_BASE  = (window.CLASSBRIDGE_API_URL || 'http://localhost:8080');
+
+  /* ── On Load ────────────────────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', () => {
+    const token = localStorage.getItem('token');
+    if (!token) { window.location.href = 'index.html'; return; }
+    loadSubjects();
+  });
+
+  /* ── Load subjects into dropdown ────────────────────────────────────── */
+  async function loadSubjects() {
+    try {
+      const res = await apiFetch('/subjects');
+      const subjects = res || [];
+      const sel = document.getElementById('subject-select');
+      sel.innerHTML = '<option value="">Select Subject...</option>';
+      subjects.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = s.name;
+        sel.appendChild(opt);
+      });
+    } catch (e) {
+      console.error('Failed to load subjects:', e);
+    }
+  }
+
+  /* ── Record toggle ──────────────────────────────────────────────────── */
+  async function handleRecordToggle() {
+    if (!isRecording) {
+      await startRecording();
+    } else {
+      await stopRecording();
+    }
+  }
+
+  async function startRecording() {
+    const subjectId = document.getElementById('subject-select').value;
+    if (!subjectId) {
+      alert('Please select a subject before starting.');
+      return;
+    }
+
+    // Request mic
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err) {
+      alert('Microphone access denied. Please allow microphone access and try again.');
+      return;
+    }
+
+    // Create live session on backend
+    setStatus('processing', 'Starting session...');
+    try {
+      const sessionName = document.getElementById('session-name-input').value.trim();
+      const session = await apiFetch('/live-sessions', {
+        method: 'POST',
+        body: JSON.stringify({ subjectId, sessionName })
+      });
+      sessionId = session.id;
+      document.getElementById('topbar-session-name').textContent = session.sessionName || 'Live Session';
+    } catch (err) {
+      setStatus('', 'Failed to start session: ' + err.message);
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
+
+    // Connect WebSocket for live updates
+    connectWebSocket(sessionId);
+
+    // Setup AudioContext for visualizer
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    startVisualizer();
+
+    // Setup MediaRecorder
+    const mimeType = getSupportedMimeType();
+    mediaRecorder = new MediaRecorder(stream, { mimeType });
+
+    mediaRecorder.ondataavailable = async (e) => {
+      if (e.data && e.data.size > 0 && sessionId) {
+        await sendAudioChunk(e.data, mimeType);
+      }
+    };
+
+    mediaRecorder.start();
+
+    // Send a chunk every CHUNK_INTERVAL_MS
+    chunkInterval = setInterval(() => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.requestData();
+      }
+    }, CHUNK_INTERVAL_MS);
+
+    // Start timer
+    startTime = Date.now();
+    timerInterval = setInterval(updateTimer, 1000);
+
+    // UI
+    isRecording = true;
+    document.getElementById('btn-record').className = 'btn-record stop';
+    document.getElementById('btn-icon').textContent = '⏹';
+    document.getElementById('btn-text').textContent = 'End Session';
+    document.getElementById('live-badge').classList.add('visible');
+    document.getElementById('session-setup').style.display = 'none';
+    document.getElementById('mic-viz').classList.add('active');
+    document.getElementById('transcript-empty').style.display = 'none';
+    setStatus('recording', 'Recording...');
+  }
+
+  async function stopRecording() {
+    setStatus('processing', 'Ending session...');
+    isRecording = false;
+
+    // Stop UI
+    clearInterval(timerInterval);
+    clearInterval(chunkInterval);
+    cancelAnimationFrame(animFrameId);
+    document.getElementById('live-badge').classList.remove('visible');
+    document.getElementById('btn-record').disabled = true;
+    document.getElementById('btn-text').textContent = 'Processing...';
+    document.getElementById('mic-viz').classList.remove('active');
+
+    // Flush final chunk
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.requestData();
+      await new Promise(r => setTimeout(r, 600));
+      mediaRecorder.stop();
+      mediaRecorder.stream.getTracks().forEach(t => t.stop());
+    }
+
+    // Tell backend to end session
+    try {
+      await apiFetch('/live-sessions/' + sessionId + '/end', { method: 'POST' });
+      setStatus('ended', 'Processing full pipeline... This may take a few minutes.');
+    } catch (err) {
+      setStatus('', 'Session end failed: ' + err.message);
+      document.getElementById('btn-record').disabled = false;
+    }
+  }
+
+  /* ── Send chunk to backend ───────────────────────────────────────────── */
+  async function sendAudioChunk(blob, mimeType) {
+    if (!sessionId) return;
+    showProcessingIndicator(true);
+    try {
+      const formData = new FormData();
+      const ext = mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav';
+      formData.append('audio', blob, 'chunk' + ext);
+
+      const res = await fetch(API_BASE + '/live-sessions/' + sessionId + '/chunk', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + localStorage.getItem('token') },
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        applyUpdate(data);
+      } else {
+        console.warn('Chunk upload failed:', res.status);
+      }
+    } catch (err) {
+      console.warn('Chunk upload error:', err);
+    } finally {
+      showProcessingIndicator(false);
+    }
+  }
+
+  /* ── Apply update (from REST or WebSocket) ───────────────────────────── */
+  function applyUpdate(data) {
+    // Handle session ended + pipeline started
+    if (data.status === 'PIPELINE_STARTED' && data.classId) {
+      resultClassId = data.classId;
+      showDoneBanner(data.classId);
+      return;
+    }
+    if (data.status === 'FAILED') {
+      setStatus('', '❌ Error: ' + (data.message || 'Unknown error'));
+      return;
+    }
+
+    // Update transcript
+    if (data.latestChunk && data.latestChunk.trim()) {
+      appendTranscriptChunk(data.latestChunk, data.chunkCount);
+      allTranscript = data.liveTranscript || allTranscript;
+    }
+
+    // Update AI insights
+    if (data.liveTopics && data.liveTopics.length) {
+      renderTopics(data.liveTopics);
+    }
+    if (data.liveKeyPoints && data.liveKeyPoints.length) {
+      renderKeyPoints(data.liveKeyPoints);
+    }
+
+    // Update stats
+    chunkCount = data.chunkCount || chunkCount;
+    const words = (allTranscript || '').split(/\s+/).filter(Boolean).length;
+    document.getElementById('stat-words').textContent = words;
+    document.getElementById('stat-chunks').textContent = chunkCount;
+    document.getElementById('chunk-counter').textContent = chunkCount + ' chunk' + (chunkCount !== 1 ? 's' : '');
+    document.getElementById('stat-topics-count').textContent = data.liveTopics ? data.liveTopics.length : 0;
+    if (data.durationSeconds) {
+      document.getElementById('stat-duration').textContent = formatSeconds(data.durationSeconds);
+    }
+  }
+
+  /* ── WebSocket ───────────────────────────────────────────────────────── */
+  function connectWebSocket(sid) {
+    try {
+      const sock = new SockJS(WS_BASE + '/ws/live-session');
+      stompClient = new StompJs.Client({ webSocketFactory: () => sock });
+      stompClient.onConnect = () => {
+        stompClient.subscribe('/topic/session/' + sid, (msg) => {
+          try {
+            const data = JSON.parse(msg.body);
+            applyUpdate(data);
+          } catch (e) { /* ignore */ }
+        });
+      };
+      stompClient.activate();
+    } catch (e) {
+      console.warn('WebSocket not available, using REST polling only:', e);
+    }
+  }
+
+  /* ── Transcript rendering ────────────────────────────────────────────── */
+  function appendTranscriptChunk(text, chunkNum) {
+    const scroll = document.getElementById('transcript-scroll');
+
+    // Remove "latest" class from previous
+    const prev = scroll.querySelector('.latest');
+    if (prev) prev.classList.remove('latest');
+
+    const div = document.createElement('div');
+    div.className = 'transcript-chunk latest';
+    div.innerHTML = `
+      <div class="chunk-ts">Chunk ${chunkNum} · ${getCurrentTime()}</div>
+      ${escapeHtml(text)}
+    `;
+    scroll.appendChild(div);
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  function showProcessingIndicator(show) {
+    const scroll = document.getElementById('transcript-scroll');
+    let indicator = document.getElementById('processing-indicator');
+    if (show && !indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'processing-indicator';
+      indicator.className = 'chunk-processing';
+      indicator.innerHTML = `<div class="processing-dots"><span></span><span></span><span></span></div> Transcribing...`;
+      scroll.appendChild(indicator);
+      scroll.scrollTop = scroll.scrollHeight;
+    } else if (!show && indicator) {
+      indicator.remove();
+    }
+  }
+
+  /* ── AI Insights rendering ───────────────────────────────────────────── */
+  function renderTopics(topics) {
+    const el = document.getElementById('topics-list');
+    el.innerHTML = '';
+    topics.forEach(t => {
+      const item = document.createElement('div');
+      item.className = 'insight-item topic-item';
+      item.textContent = t;
+      el.appendChild(item);
+    });
+  }
+
+  function renderKeyPoints(points) {
+    const el = document.getElementById('keypoints-list');
+    el.innerHTML = '';
+    points.forEach(p => {
+      const item = document.createElement('div');
+      item.className = 'insight-item keypoint-item';
+      item.textContent = p;
+      el.appendChild(item);
+    });
+  }
+
+  /* ── Done banner ─────────────────────────────────────────────────────── */
+  function showDoneBanner(classId) {
+    resultClassId = classId;
+    document.getElementById('done-banner').classList.add('visible');
+    document.getElementById('btn-record').disabled = false;
+    document.getElementById('btn-record').className = 'btn-record start';
+    document.getElementById('btn-icon').textContent = '🔴';
+    document.getElementById('btn-text').textContent = 'Start New Session';
+    setStatus('ended', 'Done! Class saved and processing.');
+  }
+
+  function openClassPage() {
+    if (resultClassId) {
+      window.location.href = 'class.html?id=' + resultClassId;
+    }
+  }
+
+  /* ── Mic Visualizer ──────────────────────────────────────────────────── */
+  function startVisualizer() {
+    const bars = Array.from({ length: 12 }, (_, i) =>
+      document.getElementById('b' + (i + 1)));
+    const data = new Uint8Array(analyser.frequencyBinCount);
+
+    function draw() {
+      animFrameId = requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(data);
+      const step = Math.floor(data.length / 12);
+      bars.forEach((bar, i) => {
+        const val = data[i * step] / 255;
+        const h = Math.max(4, Math.round(val * 30));
+        if (bar) bar.style.height = h + 'px';
+      });
+    }
+    draw();
+  }
+
+  /* ── Timer ───────────────────────────────────────────────────────────── */
+  function updateTimer() {
+    if (!startTime) return;
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    document.getElementById('live-timer').textContent = formatDuration(elapsed);
+    document.getElementById('stat-duration').textContent = formatSeconds(elapsed);
+  }
+
+  function formatDuration(secs) {
+    const h = Math.floor(secs / 3600).toString().padStart(2, '0');
+    const m = Math.floor((secs % 3600) / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
+
+  function formatSeconds(secs) {
+    if (secs < 60) return secs + 's';
+    if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+    return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+  }
+
+  function getCurrentTime() {
+    if (!startTime) return '0:00';
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const m = Math.floor(elapsed / 60).toString().padStart(2, '0');
+    const s = (elapsed % 60).toString().padStart(2, '0');
+    return m + ':' + s;
+  }
+
+  /* ── Status bar ──────────────────────────────────────────────────────── */
+  function setStatus(type, text) {
+    const bar = document.getElementById('status-bar');
+    const icon = bar.querySelector('.status-icon');
+    bar.className = 'status-bar ' + (type || '');
+    document.getElementById('status-text').textContent = text;
+    icon.textContent = type === 'recording' ? '🔴' : type === 'processing' ? '⏳' : type === 'ended' ? '✅' : '⏸';
+  }
+
+  /* ── MIME type helper ────────────────────────────────────────────────── */
+  function getSupportedMimeType() {
+    const types = [
+      'audio/webm;codecs=opus',
+      'audio/webm',
+      'audio/ogg;codecs=opus',
+      'audio/ogg',
+      'audio/wav'
+    ];
+    for (const t of types) {
+      if (MediaRecorder.isTypeSupported(t)) return t;
+    }
+    return '';
+  }
+
+  /* ── API helper (reads token from localStorage) ──────────────────────── */
+  async function apiFetch(path, opts = {}) {
+    const headers = {
+      'Authorization': 'Bearer ' + localStorage.getItem('token'),
+      ...opts.headers
+    };
+    if (!headers['Content-Type'] && !(opts.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json';
+    }
+    const res = await fetch(API_BASE + path, { ...opts, headers });
+    if (res.status === 401) { window.location.href = 'index.html'; return; }
+    if (!res.ok) {
+      let msg = 'Request failed';
+      try { const e = await res.json(); msg = e.error || e.message || msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    return res.json().catch(() => null);
+  }
+
+  /* ── Escape HTML ─────────────────────────────────────────────────────── */
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  </script>
+</body>
+</html>
