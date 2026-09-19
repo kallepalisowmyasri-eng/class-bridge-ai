@@ -24,7 +24,6 @@ async def lifespan(app: FastAPI):
         _whisper_model = WhisperModel(model_size, device="cpu", compute_type="int8")
         print(f"[ClassBridge] Whisper model '{model_size}' loaded successfully.")
     except Exception as e:
-        # Log clearly so the user sees why startup failed
         print(f"[ClassBridge] ERROR: Failed to load Whisper model '{model_size}': {e}")
         raise RuntimeError(
             f"Could not load Whisper model '{model_size}'. "
@@ -32,7 +31,6 @@ async def lifespan(app: FastAPI):
             f"Original error: {e}"
         ) from e
     yield
-    # Cleanup on shutdown (model has no explicit close, but signal we're done)
     _whisper_model = None
     print("[ClassBridge] Whisper model unloaded.")
 
