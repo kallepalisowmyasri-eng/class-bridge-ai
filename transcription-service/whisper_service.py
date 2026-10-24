@@ -89,7 +89,7 @@ async def transcribe(request: TranscribeRequest):
         segments_iter, info = _whisper_model.transcribe(
             str(resolved_path),
             beam_size=5,
-            language="en",
+            language=None,   # auto-detect language
             vad_filter=True,
         )
 
@@ -157,7 +157,7 @@ async def transcribe_chunk(audio: UploadFile = File(...)):
         segments_iter, _ = _whisper_model.transcribe(
             tmp_path,
             beam_size=5,
-            language="en",
+            language=None,   # auto-detect language
             vad_filter=True,
         )
 

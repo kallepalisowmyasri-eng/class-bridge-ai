@@ -86,10 +86,20 @@ backend/
 
 ### 1.3 Configure database (`application.properties`)
 ```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/classbridge
-spring.datasource.username=postgres
-spring.datasource.password=YOUR_PASSWORD
-spring.jpa.hibernate.ddl-auto=update
+# MongoDB connection
+spring.data.mongodb.uri=mongodb://localhost:27017/
+spring.data.mongodb.database=classbridge_ai
+spring.data.mongodb.auto-index-creation=true
+
+# JWT
+jwt.secret=YOUR_SECRET_MIN_32_CHARS
+jwt.expiration-ms=86400000
+
+# File storage
+file.upload-dir=uploads/recordings
+file.audio-dir=uploads/audio
+
+# Server
 server.port=8080
 ```
 

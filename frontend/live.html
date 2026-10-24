@@ -560,6 +560,19 @@
         </p>
       </div>
 
+      <!-- Past Sessions -->
+      <div class="insight-card" id="past-sessions-card">
+        <div class="insight-card-title" style="cursor:pointer;justify-content:space-between;" onclick="togglePastSessions()">
+          <span style="display:flex;align-items:center;gap:0.5rem;">
+            <span class="insight-icon">🕐</span> Past Sessions
+          </span>
+          <span id="past-sessions-toggle" style="font-size:0.85rem;color:#475569;">▾</span>
+        </div>
+        <div id="past-sessions-list" style="display:flex;flex-direction:column;gap:0.5rem;">
+          <div class="insight-placeholder">Loading past sessions...</div>
+        </div>
+      </div>
+
     </aside>
   </div>
 
@@ -617,6 +630,7 @@
     const token = localStorage.getItem('token');
     if (!token) { window.location.href = 'index.html'; return; }
     loadSubjects();
+    loadPastSessions();
   });
 
   /* ── Load subjects into dropdown ────────────────────────────────────── */
@@ -906,6 +920,8 @@
     document.getElementById('btn-icon').textContent = '🔴';
     document.getElementById('btn-text').textContent = 'Start New Session';
     setStatus('ended', 'Done! Class saved and processing.');
+    // Refresh past sessions to show the completed one
+    setTimeout(loadPastSessions, 1500);
   }
 
   function openClassPage() {
@@ -986,23 +1002,48 @@
     return '';
   }
 
-  /* ── API helper (reads token from localStorage) ──────────────────────── */
-  async function apiFetch(path, opts = {}) {
-    const headers = {
-      'Authorization': 'Bearer ' + localStorage.getItem('token'),
-      ...opts.headers
-    };
-    if (!headers['Content-Type'] && !(opts.body instanceof FormData)) {
-      headers['Content-Type'] = 'application/json';
+  /* ── Past Sessions ───────────────────────────────────────────────────── */
+  let _pastSessionsOpen = true;
+
+  function togglePastSessions() {
+    _pastSessionsOpen = !_pastSessionsOpen;
+    document.getElementById('past-sessions-list').style.display = _pastSessionsOpen ? 'flex' : 'none';
+    document.getElementById('past-sessions-toggle').textContent = _pastSessionsOpen ? '▾' : '▸';
+  }
+
+  async function loadPastSessions() {
+    const list = document.getElementById('past-sessions-list');
+    if (!list) return;
+    try {
+      const sessions = await apiFetch('/live-sessions');
+      if (!sessions || sessions.length === 0) {
+        list.innerHTML = '<div class="insight-placeholder">No past sessions yet.</div>';
+        return;
+      }
+      list.innerHTML = '';
+      sessions.slice(0, 8).forEach(s => {
+        const isLive   = s.status === 'LIVE';
+        const isFailed = s.status === 'FAILED';
+        const color    = isLive ? '#ef4444' : s.resultClassId ? '#10b981' : isFailed ? '#f59e0b' : '#64748b';
+        const icon     = isLive ? '🔴' : s.resultClassId ? '✅' : isFailed ? '⚠️' : '⏳';
+        const dateStr  = s.startedAt ? new Date(s.startedAt).toLocaleDateString() : '';
+        const item = document.createElement('div');
+        item.style.cssText = 'background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:8px;padding:0.55rem 0.75rem;font-size:0.8rem;cursor:default;';
+        item.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:0.4rem;margin-bottom:0.2rem;">
+            <span style="color:${color};font-size:0.7rem;font-weight:700;letter-spacing:0.04em;display:flex;align-items:center;gap:0.25rem;">${icon} ${escapeHtml(s.status || '')}</span>
+            <span style="font-size:0.65rem;color:#475569;">${escapeHtml(dateStr)}</span>
+          </div>
+          <div style="color:#cbd5e1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(s.sessionName || 'Live Session')}</div>
+          <div style="color:#475569;font-size:0.7rem;">${escapeHtml(s.subject || '')}</div>
+          ${s.resultClassId ? `<a href="class.html?id=${s.resultClassId}" style="font-size:0.7rem;color:#8b5cf6;font-weight:600;text-decoration:none;margin-top:0.2rem;display:inline-block;">View Class →</a>` : ''}
+        `;
+        list.appendChild(item);
+      });
+    } catch (e) {
+      const list2 = document.getElementById('past-sessions-list');
+      if (list2) list2.innerHTML = '<div class="insight-placeholder">Could not load sessions.</div>';
     }
-    const res = await fetch(API_BASE + path, { ...opts, headers });
-    if (res.status === 401) { window.location.href = 'index.html'; return; }
-    if (!res.ok) {
-      let msg = 'Request failed';
-      try { const e = await res.json(); msg = e.error || e.message || msg; } catch (_) {}
-      throw new Error(msg);
-    }
-    return res.json().catch(() => null);
   }
 
   /* ── Escape HTML ─────────────────────────────────────────────────────── */

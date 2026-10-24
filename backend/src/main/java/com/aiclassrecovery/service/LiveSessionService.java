@@ -472,31 +472,57 @@ public class LiveSessionService {
     }
 
     private void mergeChunksWithFFmpeg(List<Path> chunks, Path outputPath) throws IOException, InterruptedException {
-        // Write an FFmpeg concat list file
-        Path listFile = outputPath.getParent().resolve(outputPath.getFileName() + "_list.txt");
-        List<String> lines = new ArrayList<>();
-        for (Path chunk : chunks) {
-            lines.add("file '" + chunk.toString().replace("\\", "/") + "'");
+        if (chunks.isEmpty()) {
+            throw new RuntimeException("No chunks to merge");
         }
-        Files.write(listFile, lines);
 
-        ProcessBuilder pb = new ProcessBuilder(
+        // Single chunk — just convert directly, no concat needed
+        if (chunks.size() == 1) {
+            ProcessBuilder pb = new ProcessBuilder(
                 "ffmpeg", "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", listFile.toString(),
-                "-ar", "16000",
-                "-ac", "1",
-                "-vn",
+                "-i", chunks.get(0).toString(),
+                "-ar", "16000", "-ac", "1", "-vn",
                 outputPath.toString()
-        );
+            );
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+            String output = readProcessOutput(process);
+            boolean finished = process.waitFor(5, TimeUnit.MINUTES);
+            if (!finished) { process.destroyForcibly(); throw new RuntimeException("FFmpeg convert timed out"); }
+            if (process.exitValue() != 0) throw new RuntimeException("FFmpeg convert failed: " + output);
+            return;
+        }
+
+        // Multiple chunks — use filter_complex concat (works with WebM/Ogg/WAV)
+        // Build: ffmpeg -i chunk1 -i chunk2 ... -filter_complex "[0:a][1:a]...concat=n=N:v=0:a=1[out]" -map "[out]" ...
+        List<String> cmd = new ArrayList<>();
+        cmd.add("ffmpeg");
+        cmd.add("-y");
+        for (Path chunk : chunks) {
+            cmd.add("-i");
+            cmd.add(chunk.toString());
+        }
+
+        // Build the filter_complex string: [0:a][1:a][2:a]...concat=n=N:v=0:a=1[out]
+        StringBuilder filterComplex = new StringBuilder();
+        for (int i = 0; i < chunks.size(); i++) {
+            filterComplex.append("[").append(i).append(":a]");
+        }
+        filterComplex.append("concat=n=").append(chunks.size()).append(":v=0:a=1[out]");
+
+        cmd.addAll(List.of(
+            "-filter_complex", filterComplex.toString(),
+            "-map", "[out]",
+            "-ar", "16000",
+            "-ac", "1",
+            outputPath.toString()
+        ));
+
+        ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process process = pb.start();
         String output = readProcessOutput(process);
         boolean finished = process.waitFor(10, TimeUnit.MINUTES);
-
-        // Clean up list file
-        try { Files.deleteIfExists(listFile); } catch (IOException ignored) {}
 
         if (!finished) {
             process.destroyForcibly();

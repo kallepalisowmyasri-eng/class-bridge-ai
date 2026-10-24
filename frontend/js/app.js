@@ -2,7 +2,10 @@
 // Configurable API base URL — change this if backend runs on a different host/port
 const API = (window.CLASSBRIDGE_API_URL || 'http://localhost:8080') + '/api';
 let token = localStorage.getItem('token');
-let currentUser = JSON.parse(localStorage.getItem('user') || 'null');
+let currentUser = (() => {
+  try { return JSON.parse(localStorage.getItem('user') || 'null'); }
+  catch (_) { localStorage.removeItem('user'); return null; }
+})();
 
 /* ── Auth Helpers ───────────────────────────────────────────────────────── */
 function setAuth(t, user) {
@@ -241,8 +244,9 @@ async function initDashboard() {
   const clearBtn = document.getElementById('btn-clear-filter');
   if (clearBtn) clearBtn.addEventListener('click', clearAllFilters);
 
-  // Load initial data
+  // Load initial data (live sessions non-blocking — will hide section if no sessions)
   await Promise.all([loadSubjects(), loadClasses()]);
+  loadLiveSessions(); // fire-and-forget, updates section when ready
 
   // Handle URL hash navigation if present
   const hash = window.location.hash.replace('#', '');
@@ -1973,3 +1977,92 @@ document.addEventListener('click', (e) => {
     if (id) retryClassProcessing(id);
   }
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Phase 14 — Live Sessions Dashboard Integration
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Load and render recent live sessions into the Home dashboard.
+ * Called from initDashboard() — non-fatal if the endpoint fails.
+ */
+async function loadLiveSessions() {
+  const container = document.getElementById('live-sessions-section');
+  if (!container) return; // not on dashboard
+
+  try {
+    const sessions = await apiFetch('/live-sessions');
+    if (!sessions || sessions.length === 0) {
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    renderLiveSessionsSection(sessions.slice(0, 6)); // show latest 6
+  } catch (e) {
+    // Live sessions are optional — silently hide the section on error
+    const sec = document.getElementById('live-sessions-section');
+    if (sec) sec.style.display = 'none';
+  }
+}
+
+function renderLiveSessionsSection(sessions) {
+  const grid = document.getElementById('live-sessions-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  sessions.forEach(s => {
+    const isLive    = s.status === 'LIVE';
+    const isEnded   = s.status === 'ENDED';
+    const isFailed  = s.status === 'FAILED';
+
+    const statusColor = isLive ? '#ef4444' : isEnded ? '#10b981' : '#f59e0b';
+    const statusIcon  = isLive ? '🔴' : isEnded ? '✅' : '⚠️';
+    const statusLabel = isLive ? 'LIVE' : isEnded ? (s.resultClassId ? 'Ready' : 'Processing') : 'Failed';
+
+    const durationStr = s.approximateDurationSeconds
+      ? formatLiveDuration(s.approximateDurationSeconds) : '—';
+    const chunkStr = s.chunkCount != null ? s.chunkCount + ' chunks' : '';
+    const dateStr  = s.startedAt ? new Date(s.startedAt).toLocaleString() : '';
+
+    // Primary action
+    let actionHtml = '';
+    if (isLive) {
+      actionHtml = `<a href="live.html" class="btn btn-sm" style="background:rgba(239,68,68,0.12);color:#ef4444;border:1.5px solid rgba(239,68,68,0.3);border-radius:8px;font-size:0.78rem;font-weight:700;padding:0.3rem 0.7rem;text-decoration:none;">Resume →</a>`;
+    } else if (s.resultClassId) {
+      actionHtml = `<a href="class.html?id=${esc(s.resultClassId)}" class="btn btn-sm btn-primary" style="font-size:0.78rem;padding:0.3rem 0.7rem;">View Class →</a>`;
+    }
+
+    const card = document.createElement('div');
+    card.className = 'live-session-card';
+    card.innerHTML = `
+      <div class="lsc-header">
+        <div class="lsc-status" style="color:${statusColor}">
+          <span>${statusIcon}</span>
+          <span class="lsc-status-text">${esc(statusLabel)}</span>
+          ${isLive ? '<span class="lsc-live-dot"></span>' : ''}
+        </div>
+        <span class="lsc-date">${esc(dateStr)}</span>
+      </div>
+      <div class="lsc-name">${esc(s.sessionName || 'Live Session')}</div>
+      <div class="lsc-subject">${esc(s.subject || '')}</div>
+      <div class="lsc-meta">
+        ${durationStr ? `<span>⏱ ${esc(durationStr)}</span>` : ''}
+        ${chunkStr    ? `<span>📦 ${esc(chunkStr)}</span>` : ''}
+        ${s.chunkCount > 0 ? `<span>🗣 ${Math.round(s.chunkCount * 5 / 60 * 150)} words</span>` : ''}
+      </div>
+      ${s.liveTopics && s.liveTopics.length ? `
+        <div class="lsc-topics">
+          ${s.liveTopics.slice(0,3).map(t => `<span class="lsc-topic-chip">${esc(t)}</span>`).join('')}
+        </div>` : ''}
+      ${isFailed && s.failureReason ? `<div class="lsc-error">❌ ${esc(s.failureReason)}</div>` : ''}
+      ${actionHtml ? `<div class="lsc-action">${actionHtml}</div>` : ''}
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function formatLiveDuration(secs) {
+  if (secs < 60) return secs + 's';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+  return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+}

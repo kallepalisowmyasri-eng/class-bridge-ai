@@ -58,8 +58,16 @@ public class GlobalExceptionHandler {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Access denied"));
         }
+        if (ex.getMessage() != null && (
+                ex.getMessage().toLowerCase().contains("already registered") ||
+                ex.getMessage().toLowerCase().contains("invalid") ||
+                ex.getMessage().toLowerCase().contains("already analyzed"))) {
+            return ResponseEntity.badRequest().body(Map.of("error", message));
+        }
 
-        return ResponseEntity.badRequest().body(Map.of("error", message));
+        // Internal errors (FFmpeg, Gemini, DB, etc.) → 500
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", message));
     }
 
     @ExceptionHandler(BadCredentialsException.class)
